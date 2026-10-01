@@ -5,6 +5,7 @@
  * スクリプトプロパティ:
  *   GEMINI_API_KEY        (必須) Google AI Studio の API キー
  *   GEMINI_MODEL          (任意) 既定: gemini-3.8-flash
+ *   APP_URL               (任意) 既定: https://kenken6291.github.io/ima-coco/  （メール本文のリンク）
  *   SPREADSHEET_ID        (setup() が自動設定)
  *   DRIVE_FOLDER_ID       (setup() が自動設定)
  *   PEPPER                (setup() が自動設定)
@@ -19,12 +20,15 @@ const CONFIG = {
   SHEET_USERS: 'users',
   SHEET_REQUESTS: 'requests',
   GEMINI_MODEL_DEFAULT: 'gemini-3.8-flash',
+  APP_URL_DEFAULT: 'https://kenken6291.github.io/ima-coco/',
   MAX_ACTIVE_POSTS_PER_USER: 5,
   MAX_MEDIA_BYTES: 20 * 1024 * 1024,
   MAX_EXPIRE_HOURS: 72,
   TOKEN_TTL_DAYS: 90,
   LOGIN_MAX_FAIL: 5,
-  LOGIN_LOCK_SEC: 600,
+  LOGIN_LOCK_SEC: 900,          // 5回失敗で15分ロック
+  TEMP_PASSWORD_TTL_HOURS: 72,  // 仮パスワードの有効期限
+  FORGOT_INTERVAL_SEC: 180,     // 再発行メールの連続送信を防ぐ間隔
   EVENTS_CACHE_SEC: 20,
   HASH_ROUNDS: 100,
 };
@@ -34,7 +38,10 @@ const EVENT_HEADERS = [
   'lat', 'lng', 'media_url', 'media_type', 'capacity', 'fee', 'conditions', 'user_id', 'status',
   'hashtags', 'media_file_id'
 ];
-const USER_HEADERS = ['user_id', 'nickname', 'pass_hash', 'salt', 'token', 'token_expires', 'created_at', 'last_login'];
+const USER_HEADERS = [
+  'user_id', 'nickname', 'email', 'pass_hash', 'salt', 'must_change',
+  'token', 'token_expires', 'created_at', 'last_login', 'temp_issued_at'
+];
 const REQUEST_HEADERS = ['id', 'event_id', 'user_id', 'nickname', 'message', 'created_at'];
 
 const CATEGORIES = {
@@ -81,18 +88,24 @@ function setup() {
   Logger.log('SPREADSHEET_ID: ' + props.getProperty('SPREADSHEET_ID'));
   Logger.log('DRIVE_FOLDER_ID: ' + props.getProperty('DRIVE_FOLDER_ID'));
   Logger.log('GEMINI_API_KEY: ' + (props.getProperty('GEMINI_API_KEY') ? '設定済み' : '未設定（スクリプトプロパティに追加してください）'));
+  Logger.log('メール送信の残り回数（本日）: ' + MailApp.getRemainingDailyQuota());
 }
 
+/** シートが無ければ作成、足りない列は末尾に追加（既存データはそのまま） */
 function ensureSheet_(ss, name, headers) {
   let sh = ss.getSheetByName(name);
   if (!sh) sh = ss.insertSheet(name);
-  const first = sh.getRange(1, 1, 1, headers.length).getValues()[0];
-  if (first.join('') === '') {
+  const lastCol = Math.max(sh.getLastColumn(), 1);
+  const cur = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  if (cur.join('') === '') {
     sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
     sh.setFrozenRows(1);
+  } else {
+    const missing = headers.filter(h => cur.indexOf(h) < 0);
+    if (missing.length) sh.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
   }
   // 自動変換（日付化・数値化）を防ぐため書式なしテキストに
-  sh.getRange(1, 1, sh.getMaxRows(), headers.length).setNumberFormat('@');
+  sh.getRange(1, 1, sh.getMaxRows(), sh.getLastColumn()).setNumberFormat('@');
   return sh;
 }
 
@@ -107,6 +120,13 @@ function setupTriggers() {
 function testGemini() {
   const r = geminiReview_({ title: 'テスト', description: '河原でBBQしてます。あと2人どうぞ！', category: 'bbq', capacity: 'あと2人', fee: '割り勘', conditions: '誰でも' });
   Logger.log(JSON.stringify(r, null, 2));
+}
+
+/** メール送信の動作確認用（エディタから実行。自分宛てに届きます） */
+function testMail() {
+  const me = Session.getActiveUser().getEmail();
+  sendTempPasswordMail_(me, 'テスト', 'Abc12345xy', false);
+  Logger.log('送信しました: ' + me + ' / 本日の残り: ' + MailApp.getRemainingDailyQuota());
 }
 
 /* =========================================================
@@ -133,10 +153,15 @@ function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     switch (body.action) {
+      // 会員
       case 'register': return json_(register_(body));
       case 'login': return json_(login_(body));
+      case 'forgotPassword': return json_(forgotPassword_(body));
+      case 'changePassword': return json_(changePassword_(body));
+      case 'updateNickname': return json_(updateNickname_(body));
       case 'me': return json_(me_(body));
       case 'logout': return json_(logout_(body));
+      // 投稿
       case 'createEvent': return json_(createEvent_(body));
       case 'deleteEvent': return json_(deleteEvent_(body));
       case 'joinRequest': return json_(joinRequest_(body));
@@ -168,20 +193,31 @@ function sheet_(name) {
   if (!sh) throw new Error('シート「' + name + '」がありません。setup() を実行してください');
   return sh;
 }
+function headers_(sh) {
+  return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+}
 function readAll_(sh) {
   const values = sh.getDataRange().getValues();
-  const headers = values.shift() || [];
+  const headers = (values.shift() || []).map(String);
   return values.map((row, i) => {
     const o = { _row: i + 2 };
     headers.forEach((h, j) => { o[h] = row[j]; });
     return o;
   });
 }
-function colIndex_(sh, name) {
-  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-  const idx = headers.indexOf(name);
-  if (idx < 0) throw new Error('列 ' + name + ' がありません');
-  return idx + 1;
+/** ヘッダー名に合わせて1行追加（列の並びが変わっても安全） */
+function appendObj_(sh, obj) {
+  const h = headers_(sh);
+  sh.appendRow(h.map(k => (obj[k] === undefined || obj[k] === null) ? '' : obj[k]));
+}
+/** 指定行の複数フィールドを更新 */
+function setFields_(sh, row, obj) {
+  const h = headers_(sh);
+  Object.keys(obj).forEach(k => {
+    const c = h.indexOf(k);
+    if (c < 0) throw new Error('列 ' + k + ' がありません。setup() を実行してください');
+    sh.getRange(row, c + 1).setValue(obj[k]);
+  });
 }
 function iso_(v) {
   if (v instanceof Date) return v.toISOString();
@@ -192,6 +228,7 @@ function ms_(v) {
   const t = Date.parse(String(v || ''));
   return isNaN(t) ? 0 : t;
 }
+function bool_(v) { return String(v).toUpperCase() === 'TRUE'; }
 function clean_(v, max) {
   return String(v == null ? '' : v)
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
@@ -206,9 +243,12 @@ function withLock_(fn) {
 function clearEventsCache_() {
   CacheService.getScriptCache().remove('events_v1');
 }
+function appUrl_() {
+  return PropertiesService.getScriptProperties().getProperty('APP_URL') || CONFIG.APP_URL_DEFAULT;
+}
 
 /* =========================================================
- * 認証
+ * 会員認証
  * ========================================================= */
 function hash_(password, salt) {
   const pepper = PropertiesService.getScriptProperties().getProperty('PEPPER') || '';
@@ -222,90 +262,259 @@ function hash_(password, salt) {
 function newToken_() {
   return (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
 }
+function keyOf_(s) {
+  return Utilities.base64EncodeWebSafe(String(s).toLowerCase());
+}
+function tempPassword_() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let p = '';
+  while (!/[A-Za-z]/.test(p) || !/\d/.test(p)) {
+    p = '';
+    for (let i = 0; i < 10; i++) p += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return p;
+}
+function normEmail_(v) { return clean_(v, 254).toLowerCase(); }
+function validateEmail_(email) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw apiError_('メールアドレスの形式が正しくありません');
+}
 function validateNickname_(nick) {
   if (nick.length < 2 || nick.length > 20) throw apiError_('ニックネームは2〜20文字で入力してください');
   if (/[<>"'`\\]/.test(nick)) throw apiError_('ニックネームに使えない記号が含まれています');
 }
-
-function register_(b) {
-  const nickname = clean_(b.nickname, 20);
-  const password = String(b.password || '');
-  validateNickname_(nickname);
-  if (password.length < 6 || password.length > 64) throw apiError_('パスワードは6〜64文字で入力してください');
-
-  return withLock_(() => {
-    const sh = sheet_(CONFIG.SHEET_USERS);
-    const users = readAll_(sh);
-    const key = nickname.toLowerCase();
-    if (users.some(u => String(u.nickname).toLowerCase() === key)) {
-      throw apiError_('そのニックネームは使われています。別の名前にしてください');
-    }
-    const userId = Utilities.getUuid();
-    const salt = Utilities.getUuid();
-    const token = newToken_();
-    const now = new Date();
-    const exp = new Date(now.getTime() + CONFIG.TOKEN_TTL_DAYS * 86400000);
-    sh.appendRow([userId, nickname, hash_(password, salt), salt, token, exp.toISOString(), now.toISOString(), now.toISOString()]);
-    return { ok: true, user: { user_id: userId, nickname: nickname }, token: token };
-  });
+function validatePassword_(pw) {
+  if (pw.length < 8 || pw.length > 64) throw apiError_('パスワードは8〜64文字にしてください');
+  if (!/[A-Za-z]/.test(pw) || !/\d/.test(pw)) throw apiError_('パスワードは英字と数字を両方含めてください');
+}
+function publicUser_(u) {
+  return { user_id: String(u.user_id), nickname: String(u.nickname), email: String(u.email || '') };
+}
+function clearTokenCache_(token) {
+  if (token) CacheService.getScriptCache().remove('tok_' + token);
 }
 
-function login_(b) {
+function sendTempPasswordMail_(email, nickname, temp, isReset) {
+  const subject = isReset
+    ? '【今CoCo】仮パスワード再発行のお知らせ'
+    : '【今CoCo】会員登録ありがとうございます（仮パスワードのお知らせ）';
+  const body = [
+    nickname + ' さん',
+    '',
+    isReset ? '仮パスワードを再発行しました。' : '今CoCo（いまココ）へのご登録ありがとうございます。',
+    '',
+    '　仮パスワード：' + temp,
+    '',
+    '次の手順でログインしてください。',
+    '1. ' + appUrl_() + ' を開く',
+    '2. 右上の「ログイン／登録」→「ログイン」',
+    '3. メールアドレスと上の仮パスワードを入力',
+    '4. 新しいパスワードを決めて保存',
+    '',
+    '※ 仮パスワードの有効期限は' + CONFIG.TEMP_PASSWORD_TTL_HOURS + '時間です。',
+    '※ お心当たりのない場合は、このメールを破棄してください。',
+    '',
+    '――',
+    '今CoCo（いまココ）',
+    appUrl_(),
+  ].join('\n');
+  MailApp.sendEmail({ to: email, subject: subject, body: body, name: '今CoCo' });
+}
+
+/** 新規登録：ニックネーム＋メール → 仮パスワードをメール送信 */
+function register_(b) {
   const nickname = clean_(b.nickname, 20);
+  const email = normEmail_(b.email);
+  validateNickname_(nickname);
+  validateEmail_(email);
+  if (b.agree !== true) throw apiError_('利用上の注意への同意が必要です');
+  if (MailApp.getRemainingDailyQuota() < 1) throw apiError_('本日のメール送信数が上限に達しました。明日もう一度お試しください');
+
+  const temp = tempPassword_();
+  const created = withLock_(() => {
+    const sh = sheet_(CONFIG.SHEET_USERS);
+    const users = readAll_(sh);
+    if (users.some(u => String(u.email).toLowerCase() === email)) {
+      throw apiError_('このメールアドレスは登録済みです。「パスワードを忘れた方」から仮パスワードを再発行できます');
+    }
+    if (users.some(u => String(u.nickname).toLowerCase() === nickname.toLowerCase())) {
+      throw apiError_('そのニックネームは使われています。別の名前にしてください');
+    }
+    const salt = Utilities.getUuid();
+    const now = new Date().toISOString();
+    const user = {
+      user_id: Utilities.getUuid(), nickname: nickname, email: email,
+      pass_hash: hash_(temp, salt), salt: salt, must_change: 'TRUE',
+      token: '', token_expires: '', created_at: now, last_login: '', temp_issued_at: now,
+    };
+    appendObj_(sh, user);
+    return user;
+  });
+
+  try {
+    sendTempPasswordMail_(email, nickname, temp, false);
+  } catch (err) {
+    // メール送信に失敗したら登録を取り消す
+    withLock_(() => {
+      const sh = sheet_(CONFIG.SHEET_USERS);
+      const u = readAll_(sh).find(x => String(x.user_id) === created.user_id);
+      if (u) sh.deleteRow(u._row);
+    });
+    throw apiError_('メールを送信できませんでした。アドレスを確認してもう一度お試しください');
+  }
+  return { ok: true, email: email };
+}
+
+/** ログイン：メール＋パスワード（仮パスワードなら mustChange: true） */
+function login_(b) {
+  const email = normEmail_(b.email);
   const password = String(b.password || '');
-  if (!nickname || !password) throw apiError_('ニックネームとパスワードを入力してください');
+  if (!email || !password) throw apiError_('メールアドレスとパスワードを入力してください');
 
   const cache = CacheService.getScriptCache();
-  const failKey = 'fail_' + Utilities.base64EncodeWebSafe(nickname.toLowerCase());
+  const failKey = 'fail_' + keyOf_(email);
   const fails = Number(cache.get(failKey) || 0);
-  if (fails >= CONFIG.LOGIN_MAX_FAIL) throw apiError_('ログインに5回失敗したため、10分間ロックしています');
+  if (fails >= CONFIG.LOGIN_MAX_FAIL) throw apiError_('ログインに5回失敗したため、15分間ロックしています。時間をおいてお試しください');
 
   return withLock_(() => {
     const sh = sheet_(CONFIG.SHEET_USERS);
-    const users = readAll_(sh);
-    const u = users.find(x => String(x.nickname).toLowerCase() === nickname.toLowerCase());
+    const u = readAll_(sh).find(x => String(x.email).toLowerCase() === email);
     if (!u || hash_(password, String(u.salt)) !== String(u.pass_hash)) {
       cache.put(failKey, String(fails + 1), CONFIG.LOGIN_LOCK_SEC);
-      throw apiError_('ニックネームかパスワードが違います（残り' + Math.max(0, CONFIG.LOGIN_MAX_FAIL - fails - 1) + '回）');
+      const left = Math.max(0, CONFIG.LOGIN_MAX_FAIL - fails - 1);
+      throw apiError_(left > 0
+        ? 'メールアドレスかパスワードが違います（あと' + left + '回でロック）'
+        : 'ログインに5回失敗したため、15分間ロックしました');
+    }
+    const mustChange = bool_(u.must_change);
+    if (mustChange && ms_(u.temp_issued_at) + CONFIG.TEMP_PASSWORD_TTL_HOURS * 3600000 < Date.now()) {
+      throw apiError_('仮パスワードの有効期限が切れています。「パスワードを忘れた方」から再発行してください');
     }
     cache.remove(failKey);
+
     const now = new Date();
     let token = String(u.token || '');
     if (!token || ms_(u.token_expires) < now.getTime()) token = newToken_();
-    const exp = new Date(now.getTime() + CONFIG.TOKEN_TTL_DAYS * 86400000);
-    const tokCol = colIndex_(sh, 'token');
-    sh.getRange(u._row, tokCol, 1, 2).setValues([[token, exp.toISOString()]]);
-    sh.getRange(u._row, colIndex_(sh, 'last_login')).setValue(now.toISOString());
-    return { ok: true, user: { user_id: String(u.user_id), nickname: String(u.nickname) }, token: token };
+    setFields_(sh, u._row, {
+      token: token,
+      token_expires: new Date(now.getTime() + CONFIG.TOKEN_TTL_DAYS * 86400000).toISOString(),
+      last_login: now.toISOString(),
+    });
+    clearTokenCache_(token);
+    return { ok: true, user: publicUser_(u), token: token, mustChange: mustChange };
   });
 }
 
-function authUser_(token) {
+/** パスワード忘れ：仮パスワードを再発行（登録の有無は回答しない） */
+function forgotPassword_(b) {
+  const email = normEmail_(b.email);
+  validateEmail_(email);
+  const cache = CacheService.getScriptCache();
+  const rk = 'forgot_' + keyOf_(email);
+  if (cache.get(rk)) throw apiError_('少し前に送信しました。届かない場合は3分ほど待ってから再度お試しください');
+  if (MailApp.getRemainingDailyQuota() < 1) throw apiError_('本日のメール送信数が上限に達しました。明日もう一度お試しください');
+
+  const temp = tempPassword_();
+  const target = withLock_(() => {
+    const sh = sheet_(CONFIG.SHEET_USERS);
+    const u = readAll_(sh).find(x => String(x.email).toLowerCase() === email);
+    if (!u) return null;
+    const salt = Utilities.getUuid();
+    clearTokenCache_(String(u.token || ''));
+    setFields_(sh, u._row, {
+      pass_hash: hash_(temp, salt), salt: salt, must_change: 'TRUE',
+      temp_issued_at: new Date().toISOString(),
+      token: '', token_expires: '', // 他の端末のログインも解除
+    });
+    return { email: String(u.email), nickname: String(u.nickname) };
+  });
+
+  cache.put(rk, '1', CONFIG.FORGOT_INTERVAL_SEC);
+  cache.remove('fail_' + keyOf_(email));
+  if (target) {
+    try { sendTempPasswordMail_(target.email, target.nickname, temp, true); }
+    catch (err) { throw apiError_('メールを送信できませんでした。時間をおいてお試しください'); }
+  }
+  return { ok: true };
+}
+
+/**
+ * トークンから会員を取得
+ * opts.allowMustChange: 仮パスワードのままでも通す（パスワード変更・me用）
+ */
+function authUser_(token, opts) {
   token = String(token || '');
   if (!token) throw apiError_('ログインが必要です', 'AUTH');
   const cache = CacheService.getScriptCache();
+  let user = null;
   const hit = cache.get('tok_' + token);
-  if (hit) return JSON.parse(hit);
-  const users = readAll_(sheet_(CONFIG.SHEET_USERS));
-  const u = users.find(x => String(x.token) === token);
-  if (!u || ms_(u.token_expires) < Date.now()) throw apiError_('ログインの有効期限が切れました。もう一度ログインしてください', 'AUTH');
-  const user = { user_id: String(u.user_id), nickname: String(u.nickname) };
-  cache.put('tok_' + token, JSON.stringify(user), 600);
+  if (hit) {
+    user = JSON.parse(hit);
+  } else {
+    const u = readAll_(sheet_(CONFIG.SHEET_USERS)).find(x => String(x.token) === token);
+    if (!u || ms_(u.token_expires) < Date.now()) throw apiError_('ログインの有効期限が切れました。もう一度ログインしてください', 'AUTH');
+    user = publicUser_(u);
+    user.must_change = bool_(u.must_change);
+    cache.put('tok_' + token, JSON.stringify(user), 600);
+  }
+  if (user.must_change && !(opts && opts.allowMustChange)) {
+    throw apiError_('はじめに新しいパスワードを設定してください', 'MUST_CHANGE');
+  }
   return user;
 }
 
 function me_(b) {
-  return { ok: true, user: authUser_(b.token) };
+  const user = authUser_(b.token, { allowMustChange: true });
+  return { ok: true, user: { user_id: user.user_id, nickname: user.nickname, email: user.email }, mustChange: !!user.must_change };
+}
+
+/** パスワード変更（初回の仮パスワード更新もこれ） */
+function changePassword_(b) {
+  const token = String(b.token || '');
+  const user = authUser_(token, { allowMustChange: true });
+  const current = String(b.currentPassword || '');
+  const next = String(b.newPassword || '');
+  validatePassword_(next);
+  if (current === next) throw apiError_('今と違うパスワードにしてください');
+
+  return withLock_(() => {
+    const sh = sheet_(CONFIG.SHEET_USERS);
+    const u = readAll_(sh).find(x => String(x.user_id) === user.user_id);
+    if (!u) throw apiError_('会員情報が見つかりません', 'AUTH');
+    if (hash_(current, String(u.salt)) !== String(u.pass_hash)) throw apiError_('現在のパスワード（仮パスワード）が違います');
+    const salt = Utilities.getUuid();
+    setFields_(sh, u._row, { pass_hash: hash_(next, salt), salt: salt, must_change: 'FALSE', temp_issued_at: '' });
+    clearTokenCache_(token);
+    return { ok: true, user: publicUser_(u) };
+  });
+}
+
+function updateNickname_(b) {
+  const token = String(b.token || '');
+  const user = authUser_(token);
+  const nickname = clean_(b.nickname, 20);
+  validateNickname_(nickname);
+  return withLock_(() => {
+    const sh = sheet_(CONFIG.SHEET_USERS);
+    const users = readAll_(sh);
+    if (users.some(x => String(x.user_id) !== user.user_id && String(x.nickname).toLowerCase() === nickname.toLowerCase())) {
+      throw apiError_('そのニックネームは使われています。別の名前にしてください');
+    }
+    const u = users.find(x => String(x.user_id) === user.user_id);
+    setFields_(sh, u._row, { nickname: nickname });
+    clearTokenCache_(token);
+    clearEventsCache_();
+    return { ok: true, user: { user_id: user.user_id, nickname: nickname, email: user.email } };
+  });
 }
 
 function logout_(b) {
   const token = String(b.token || '');
   if (!token) return { ok: true };
-  CacheService.getScriptCache().remove('tok_' + token);
+  clearTokenCache_(token);
   return withLock_(() => {
     const sh = sheet_(CONFIG.SHEET_USERS);
     const u = readAll_(sh).find(x => String(x.token) === token);
-    if (u) sh.getRange(u._row, colIndex_(sh, 'token'), 1, 2).setValues([['', '']]);
+    if (u) setFields_(sh, u._row, { token: '', token_expires: '' });
     return { ok: true };
   });
 }
@@ -438,9 +647,7 @@ function createEvent_(b) {
     media_file_id: up.id,
   };
   try {
-    withLock_(() => {
-      sheet_(CONFIG.SHEET_EVENTS).appendRow(EVENT_HEADERS.map(h => row[h]));
-    });
+    withLock_(() => { appendObj_(sheet_(CONFIG.SHEET_EVENTS), row); });
   } catch (err) {
     if (up.id) { try { DriveApp.getFileById(up.id).setTrashed(true); } catch (_) {} }
     throw apiError_('保存に失敗しました。もう一度お試しください');
@@ -618,7 +825,7 @@ function deleteEvent_(b) {
     if (!ev) throw apiError_('投稿が見つかりません');
     if (String(ev.user_id) !== user.user_id) throw apiError_('自分の投稿だけ削除できます');
     if (String(ev.status) !== 'active') throw apiError_('この投稿はすでに終了しています');
-    sh.getRange(ev._row, colIndex_(sh, 'status')).setValue('cancelled');
+    setFields_(sh, ev._row, { status: 'cancelled' });
     return String(ev.media_file_id || '');
   });
   trashMedia_(fileId);
@@ -640,7 +847,10 @@ function joinRequest_(b) {
     const sh = sheet_(CONFIG.SHEET_REQUESTS);
     const dup = readAll_(sh).some(r => String(r.event_id) === eventId && String(r.user_id) === user.user_id);
     if (dup) throw apiError_('すでに参加リクエスト済みです');
-    sh.appendRow([Utilities.getUuid(), eventId, user.user_id, user.nickname, message, new Date().toISOString()]);
+    appendObj_(sh, {
+      id: Utilities.getUuid(), event_id: eventId, user_id: user.user_id,
+      nickname: user.nickname, message: message, created_at: new Date().toISOString(),
+    });
     clearEventsCache_();
     return { ok: true };
   });
@@ -685,7 +895,12 @@ function getMyData_(b) {
     .sort((a, b2) => (a.created_at < b2.created_at ? 1 : -1))
     .slice(0, 30);
 
-  return { ok: true, user: user, myEvents: myEvents, sentRequests: sent };
+  return {
+    ok: true,
+    user: { user_id: user.user_id, nickname: user.nickname, email: user.email },
+    myEvents: myEvents,
+    sentRequests: sent,
+  };
 }
 
 /* =========================================================
@@ -699,7 +914,7 @@ function expireEvents() {
     const sh = sheet_(CONFIG.SHEET_EVENTS);
     const values = sh.getDataRange().getValues();
     if (values.length < 2) return;
-    const h = values[0];
+    const h = values[0].map(String);
     const cStatus = h.indexOf('status'), cExp = h.indexOf('expires_at'), cFile = h.indexOf('media_file_id');
     const now = Date.now();
     for (let i = 1; i < values.length; i++) {

@@ -86,6 +86,10 @@
   .field { width: 100%; border: 2px solid var(--ink); border-radius: 14px; padding: 10px 12px; font-size: 16px; background: #fff; }
   .field:focus { outline: none; box-shadow: 0 0 0 3px rgba(255,61,104,.35); }
   .label { font-weight: 800; font-size: 14px; margin-bottom: 6px; display: block; }
+  .pw-wrap { position: relative; }
+  .pw-wrap .field { padding-right: 48px; }
+  .pw-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 10px; }
+  .auth-err, .set-err { color: var(--flare); font-size: 14px; font-weight: 700; min-height: 1.25rem; }
 
   .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 110px); transform: translate(-50%, 20px); opacity: 0; z-index: 2000; transition: all .25s; pointer-events: none; max-width: 90vw; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -113,7 +117,7 @@
   <div class="flex items-center justify-between px-3 gap-2">
     <h1 class="pointer-events-auto sticker bg-flare text-white rounded-2xl px-3 py-1.5 font-display text-xl leading-none tracking-wide select-none" style="text-shadow:2px 2px 0 var(--ink)">今CoCo</h1>
     <button id="btnUser" class="pointer-events-auto sticker bg-white rounded-full pl-3 pr-4 py-2 text-sm font-bold flex items-center gap-2 max-w-[55%]">
-      <i class="fa-solid fa-circle-user text-lg"></i><span id="userLabel" class="truncate">ニックネーム登録</span>
+      <i class="fa-solid fa-circle-user text-lg"></i><span id="userLabel" class="truncate">ログイン／登録</span>
     </button>
   </div>
   <nav id="filterBar" class="pointer-events-auto flex gap-2 overflow-x-auto no-scrollbar px-3 pt-3 pb-2" aria-label="カテゴリで絞り込み"></nav>
@@ -144,29 +148,98 @@
   <div class="sheet-body pb-safe" id="detailBody"></div>
 </section>
 
-<!-- 認証シート -->
+<!-- 会員シート（ログイン／新規登録／パスワード忘れ／パスワード更新） -->
 <section id="sheetAuth" class="sheet" role="dialog" aria-modal="true" aria-labelledby="authTitle">
   <div class="sheet-grab"></div>
   <div class="sheet-body px-5 pb-safe">
     <div class="flex items-center justify-between mt-2">
-      <h2 id="authTitle" class="font-display text-xl">仲間入りしよう</h2>
+      <h2 id="authTitle" class="font-display text-xl">ログイン</h2>
       <button class="close-sheet w-10 h-10 text-xl" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
     </div>
-    <p id="authReason" class="text-sm mt-1 mb-4">投稿や参加リクエストにはニックネーム登録が必要です。地図を見るだけなら登録はいりません。</p>
-    <div class="flex gap-2 mb-4" role="tablist">
-      <button class="chip auth-tab" data-mode="register" aria-pressed="true">はじめて</button>
-      <button class="chip auth-tab" data-mode="login" aria-pressed="false">登録済みの方</button>
+    <p id="authReason" class="text-sm mt-1 mb-4"></p>
+
+    <div id="authTabs" class="flex gap-2 mb-4" role="tablist">
+      <button class="chip auth-tab" data-view="login" aria-pressed="true">ログイン</button>
+      <button class="chip auth-tab" data-view="register" aria-pressed="false">はじめての方</button>
     </div>
-    <label class="label" for="authNick">ニックネーム</label>
-    <input id="authNick" class="field mb-3" maxlength="20" autocomplete="username" placeholder="例：キャンプ好きのケン">
-    <label class="label" for="authPass">パスワード（6文字以上）</label>
-    <div class="relative mb-2">
-      <input id="authPass" type="password" class="field pr-12" maxlength="64" autocomplete="new-password">
-      <button id="togglePass" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9" aria-label="パスワードを表示"><i class="fa-solid fa-eye"></i></button>
+
+    <!-- ログイン -->
+    <div class="auth-view" data-view="login">
+      <label class="label" for="loginEmail">メールアドレス</label>
+      <input id="loginEmail" type="email" class="field mb-3" autocomplete="email" inputmode="email" maxlength="254">
+      <label class="label" for="loginPass">パスワード（仮パスワード）</label>
+      <div class="pw-wrap mb-2">
+        <input id="loginPass" type="password" class="field" autocomplete="current-password" maxlength="64">
+        <button type="button" class="pw-toggle" data-for="loginPass" aria-label="パスワードを表示"><i class="fa-solid fa-eye"></i></button>
+      </div>
+      <p class="auth-err"></p>
+      <button id="loginSubmit" class="sticker bg-flare text-white w-full rounded-2xl py-3 mt-2 font-display text-lg">ログイン</button>
+      <button class="go-view block mx-auto mt-4 text-sm font-bold underline" data-view="forgot">パスワードを忘れた方</button>
     </div>
-    <p id="authError" class="text-flare text-sm font-bold min-h-[1.25rem]"></p>
-    <button id="authSubmit" class="sticker bg-flare text-white w-full rounded-2xl py-3 mt-2 font-display text-lg">登録してはじめる</button>
-    <p class="text-xs text-ink/60 mt-3">パスワードは暗号化して保存されます。忘れると復旧できないのでメモしておいてください。</p>
+
+    <!-- 新規登録 -->
+    <div class="auth-view hidden" data-view="register">
+      <label class="label" for="regNick">ニックネーム（地図に表示されます）</label>
+      <input id="regNick" class="field mb-3" maxlength="20" autocomplete="nickname" placeholder="例：キャンプ好きのケン">
+      <label class="label" for="regEmail">メールアドレス（公開されません）</label>
+      <input id="regEmail" type="email" class="field mb-3" autocomplete="email" inputmode="email" maxlength="254">
+      <div class="bg-sky border-2 border-ink rounded-2xl p-3 text-xs leading-relaxed mb-3">
+        <p class="font-bold text-sm mb-1">利用上の注意</p>
+        <p>・投稿した場所は誰でも見られます。自宅など個人が特定される場所は投稿しないでください。</p>
+        <p>・初対面の人と会うときは人目のある場所で。トラブルは当事者同士で解決してください。</p>
+        <p>・投稿はAIが自動チェックしますが、内容の正確さや安全は保証されません。</p>
+        <p>・不適切な投稿は予告なく削除することがあります。</p>
+      </div>
+      <label class="flex items-start gap-2 text-sm font-bold mb-2 cursor-pointer">
+        <input id="regAgree" type="checkbox" class="mt-1 w-5 h-5 accent-[#FF3D68]">
+        <span>利用上の注意に同意します</span>
+      </label>
+      <p class="auth-err"></p>
+      <button id="regSubmit" class="sticker bg-flare text-white w-full rounded-2xl py-3 mt-2 font-display text-lg">仮パスワードを受け取る</button>
+      <p class="text-xs text-ink/60 mt-3">入力したメールアドレスに仮パスワードが届きます。ログイン後、自分のパスワードに変更してください。</p>
+    </div>
+
+    <!-- パスワード忘れ -->
+    <div class="auth-view hidden" data-view="forgot">
+      <p class="text-sm mb-3">登録したメールアドレスに、新しい仮パスワードを送ります。</p>
+      <label class="label" for="forgotEmail">メールアドレス</label>
+      <input id="forgotEmail" type="email" class="field mb-2" autocomplete="email" inputmode="email" maxlength="254">
+      <p class="auth-err"></p>
+      <button id="forgotSubmit" class="sticker bg-flare text-white w-full rounded-2xl py-3 mt-2 font-display text-lg">仮パスワードを再発行</button>
+      <button class="go-view block mx-auto mt-4 text-sm font-bold underline" data-view="login">ログインに戻る</button>
+    </div>
+
+    <!-- 送信完了 -->
+    <div class="auth-view hidden" data-view="sent">
+      <div class="text-center py-2">
+        <p class="text-5xl mb-3">📩</p>
+        <p id="sentText" class="font-bold leading-relaxed"></p>
+        <p class="text-xs text-ink/60 mt-3">届かないときは迷惑メールフォルダも確認してください。</p>
+      </div>
+      <button class="go-view sticker bg-ink text-white w-full rounded-2xl py-3 mt-4 font-display text-lg" data-view="login">ログインへ</button>
+    </div>
+
+    <!-- パスワード更新（初回・再発行後） -->
+    <div class="auth-view hidden" data-view="change">
+      <p class="text-sm mb-3 bg-sun border-2 border-ink rounded-xl px-3 py-2 font-bold">仮パスワードでログインしました。続けるには自分のパスワードを決めてください。</p>
+      <label class="label" for="chgCurrent">仮パスワード</label>
+      <div class="pw-wrap mb-3">
+        <input id="chgCurrent" type="password" class="field" autocomplete="current-password" maxlength="64">
+        <button type="button" class="pw-toggle" data-for="chgCurrent" aria-label="パスワードを表示"><i class="fa-solid fa-eye"></i></button>
+      </div>
+      <label class="label" for="chgNew">新しいパスワード（8文字以上・英字と数字）</label>
+      <div class="pw-wrap mb-3">
+        <input id="chgNew" type="password" class="field" autocomplete="new-password" maxlength="64">
+        <button type="button" class="pw-toggle" data-for="chgNew" aria-label="パスワードを表示"><i class="fa-solid fa-eye"></i></button>
+      </div>
+      <label class="label" for="chgConfirm">新しいパスワード（確認）</label>
+      <div class="pw-wrap mb-2">
+        <input id="chgConfirm" type="password" class="field" autocomplete="new-password" maxlength="64">
+        <button type="button" class="pw-toggle" data-for="chgConfirm" aria-label="パスワードを表示"><i class="fa-solid fa-eye"></i></button>
+      </div>
+      <p class="auth-err"></p>
+      <button id="chgSubmit" class="sticker bg-flare text-white w-full rounded-2xl py-3 mt-2 font-display text-lg">パスワードを保存</button>
+    </div>
   </div>
 </section>
 
@@ -289,10 +362,40 @@
   <div class="sheet-grab"></div>
   <div class="sheet-body px-5 pb-safe">
     <div class="flex items-center justify-between mt-2">
-      <h2 id="myTitle" class="font-display text-xl truncate"></h2>
-      <button class="close-sheet w-10 h-10 text-xl" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      <div class="min-w-0">
+        <h2 id="myTitle" class="font-display text-xl truncate"></h2>
+        <p id="myEmail" class="text-xs text-ink/60 truncate"></p>
+      </div>
+      <button class="close-sheet w-10 h-10 text-xl shrink-0" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
     </div>
     <div id="myBody" class="mt-3"></div>
+
+    <h3 class="font-display text-base mt-6 mb-2">ニックネームの変更</h3>
+    <div class="flex gap-2">
+      <input id="setNick" class="field" maxlength="20" autocomplete="nickname">
+      <button id="setNickSubmit" class="sticker bg-white rounded-xl px-4 font-bold shrink-0">変更</button>
+    </div>
+    <p id="setNickErr" class="set-err mt-1"></p>
+
+    <h3 class="font-display text-base mt-4 mb-2">パスワードの変更</h3>
+    <label class="label" for="setCurrent">現在のパスワード</label>
+    <div class="pw-wrap mb-3">
+      <input id="setCurrent" type="password" class="field" autocomplete="current-password" maxlength="64">
+      <button type="button" class="pw-toggle" data-for="setCurrent" aria-label="パスワードを表示"><i class="fa-solid fa-eye"></i></button>
+    </div>
+    <label class="label" for="setNew">新しいパスワード（8文字以上・英字と数字）</label>
+    <div class="pw-wrap mb-3">
+      <input id="setNew" type="password" class="field" autocomplete="new-password" maxlength="64">
+      <button type="button" class="pw-toggle" data-for="setNew" aria-label="パスワードを表示"><i class="fa-solid fa-eye"></i></button>
+    </div>
+    <label class="label" for="setConfirm">新しいパスワード（確認）</label>
+    <div class="pw-wrap mb-2">
+      <input id="setConfirm" type="password" class="field" autocomplete="new-password" maxlength="64">
+      <button type="button" class="pw-toggle" data-for="setConfirm" aria-label="パスワードを表示"><i class="fa-solid fa-eye"></i></button>
+    </div>
+    <p id="setPassErr" class="set-err"></p>
+    <button id="setPassSubmit" class="sticker bg-white w-full rounded-2xl py-3 mt-1 font-bold">パスワードを変更</button>
+
     <button id="btnLogout" class="w-full mt-6 py-3 font-bold text-ink/70 underline">ログアウト</button>
   </div>
 </section>
@@ -325,14 +428,14 @@ const CATS = [
   { id: 'other',      label: 'その他',     icon: '📍', color: '#7A7896' },
 ];
 const CAT = Object.fromEntries(CATS.map(c => [c.id, c]));
-const LS_KEY = 'imacoco_auth_v1';
+const LS_KEY = 'imacoco_auth_v2';
 const MAX_VIDEO_BYTES = 15 * 1024 * 1024;
 
 const state = {
   map: null, events: [], markers: new Map(), filter: 'all',
   auth: loadAuth(), meLatLng: null, meMarker: null,
   picking: false, pickMarker: null, openEventId: null, tick: null,
-  authMode: 'register', afterAuth: null,
+  authView: 'login', afterAuth: null,
   step: 1,
   draft: null,
 };
@@ -343,6 +446,7 @@ const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function loadAuth() { try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (_) { return null; } }
 function saveAuth(a) { state.auth = a; try { a ? localStorage.setItem(LS_KEY, JSON.stringify(a)) : localStorage.removeItem(LS_KEY); } catch (_) {} renderUser(); }
+function isMember() { return !!(state.auth && state.auth.token && !state.auth.mustChange); }
 function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms); }
 function pad(n) { return String(n).padStart(2, '0'); }
 function fmtTime(d) { return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
@@ -357,6 +461,13 @@ function ago(iso) {
   if (m < 1) return 'たった今'; if (m < 60) return `${m}分前`;
   const h = Math.floor(m / 60); return h < 24 ? `${h}時間前` : `${Math.floor(h / 24)}日前`;
 }
+function validEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+function checkNewPassword(pw, confirm) {
+  if (pw.length < 8) return 'パスワードは8文字以上にしてください';
+  if (!/[A-Za-z]/.test(pw) || !/\d/.test(pw)) return 'パスワードは英字と数字を両方含めてください';
+  if (pw !== confirm) return '確認用のパスワードが一致しません';
+  return '';
+}
 
 /* ---------- API（GASのリダイレクト／CORS対応） ---------- */
 async function handleRes(res) {
@@ -365,6 +476,7 @@ async function handleRes(res) {
   try { j = JSON.parse(text); } catch (_) { throw new Error('サーバーの応答を読めません。GASのデプロイ設定（アクセス：全員）を確認してください'); }
   if (!j.ok) {
     if (j.code === 'AUTH') saveAuth(null);
+    if (j.code === 'MUST_CHANGE' && state.auth) { state.auth.mustChange = true; saveAuth(state.auth); }
     const e = new Error(j.error || 'エラーが発生しました'); e.data = j; throw e;
   }
   return j;
@@ -381,6 +493,13 @@ async function apiPost(body) {
     body: JSON.stringify(body),
   }));
 }
+/** 会員操作の共通エラー処理（ログイン切れ・パスワード未更新） */
+function handleAuthError(err, retry) {
+  const code = err.data?.code;
+  if (code === 'AUTH') { requireAuth('ログインの有効期限が切れました。もう一度ログインしてください。', retry); return true; }
+  if (code === 'MUST_CHANGE') { requireAuth('', retry); return true; }
+  return false;
+}
 
 /* ---------- シート ---------- */
 function openSheet(id) {
@@ -395,11 +514,24 @@ function closeSheets() {
   clearInterval(state.tick);
   const v = $('#detailBody iframe'); if (v) v.src = 'about:blank';
   clearPickMarker();
+  $$('input[type="text"].pw-shown').forEach(i => { i.type = 'password'; i.classList.remove('pw-shown'); });
+  $$('.pw-toggle').forEach(b => { b.innerHTML = '<i class="fa-solid fa-eye"></i>'; b.setAttribute('aria-label', 'パスワードを表示'); });
   if (location.search.includes('e=')) history.replaceState(null, '', location.pathname);
 }
 $('#backdrop').addEventListener('click', closeSheets);
 $$('.close-sheet').forEach(b => b.addEventListener('click', closeSheets));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheets(); });
+
+/* パスワード表示・非表示 */
+document.addEventListener('click', e => {
+  const b = e.target.closest('.pw-toggle'); if (!b) return;
+  const input = document.getElementById(b.dataset.for); if (!input) return;
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  input.classList.toggle('pw-shown', show);
+  b.innerHTML = show ? '<i class="fa-solid fa-eye-slash"></i>' : '<i class="fa-solid fa-eye"></i>';
+  b.setAttribute('aria-label', show ? 'パスワードを隠す' : 'パスワードを表示');
+});
 
 function showLoading(messages) {
   const el = $('#loading'), t = $('#loadingText');
@@ -455,7 +587,7 @@ function pinIcon(ev, i) {
   const c = CAT[ev.category] || CAT.other;
   const r = new Date(ev.expires_at).getTime() - Date.now();
   const isNew = Date.now() - new Date(ev.created_at).getTime() < 15 * 60000;
-  const mine = state.auth && state.auth.user && state.auth.user.user_id === ev.user_id;
+  const mine = state.auth?.user?.user_id === ev.user_id;
   const cls = ['coco-pin', r < 30 * 60000 ? 'soon' : '', mine ? 'mine' : ''].join(' ');
   return L.divIcon({
     className: '',
@@ -575,7 +707,7 @@ function openDetail(id) {
   $('#btnShare').addEventListener('click', () => shareEvent(ev));
   if (mine) $('#btnDelete').addEventListener('click', () => deleteEvent(ev));
   else $('#btnJoin').addEventListener('click', () => {
-    if (!state.auth) return requireAuth('参加リクエストを送るにはニックネーム登録が必要です。', () => openDetail(ev.id));
+    if (!isMember()) return requireAuth('参加リクエストを送るには会員登録が必要です。', () => openDetail(ev.id));
     $('#joinBox').classList.toggle('hidden');
     $('#joinMsg').focus();
   });
@@ -613,8 +745,8 @@ async function sendJoin(ev) {
     ev.request_count++;
     openDetail(ev.id);
   } catch (err) {
-    hideLoading(); toast(err.message, 4000);
-    if (err.data?.code === 'AUTH') requireAuth('もう一度ログインしてください。', () => openDetail(ev.id));
+    hideLoading();
+    if (!handleAuthError(err, () => openDetail(ev.id))) toast(err.message, 4000);
   }
 }
 
@@ -626,60 +758,135 @@ async function deleteEvent(ev) {
     hideLoading(); closeSheets(); toast('投稿を終了しました');
     state.events = state.events.filter(x => x.id !== ev.id);
     renderMarkers();
-  } catch (err) { hideLoading(); toast(err.message, 4000); }
+  } catch (err) {
+    hideLoading();
+    if (!handleAuthError(err)) toast(err.message, 4000);
+  }
 }
 
-/* ---------- 認証 ---------- */
+/* ---------- 会員（ログイン／新規登録／パスワード忘れ／パスワード更新） ---------- */
+const AUTH_TITLES = { login: 'ログイン', register: '会員登録', forgot: 'パスワードを忘れた方', sent: 'メールを送りました', change: '新しいパスワードを設定' };
+
 function renderUser() {
-  $('#userLabel').textContent = state.auth?.user ? state.auth.user.nickname + 'さん' : 'ニックネーム登録';
+  let label = 'ログイン／登録';
+  if (state.auth?.mustChange) label = 'パスワード設定';
+  else if (state.auth?.user) label = state.auth.user.nickname + 'さん';
+  $('#userLabel').textContent = label;
 }
-function setAuthMode(mode) {
-  state.authMode = mode;
-  $$('.auth-tab').forEach(t => t.setAttribute('aria-pressed', t.dataset.mode === mode));
-  $('#authSubmit').textContent = mode === 'register' ? '登録してはじめる' : 'ログインする';
-  $('#authPass').setAttribute('autocomplete', mode === 'register' ? 'new-password' : 'current-password');
-  $('#authError').textContent = '';
+function setAuthView(view) {
+  state.authView = view;
+  $$('.auth-view').forEach(v => v.classList.toggle('hidden', v.dataset.view !== view));
+  $('#authTabs').classList.toggle('hidden', !(view === 'login' || view === 'register'));
+  $$('.auth-tab').forEach(t => t.setAttribute('aria-pressed', t.dataset.view === view));
+  $('#authTitle').textContent = AUTH_TITLES[view];
+  $('#authReason').classList.toggle('hidden', !(view === 'login' || view === 'register') || !$('#authReason').textContent);
+  $$('.auth-err').forEach(e => e.textContent = '');
+  $('#sheetAuth .sheet-body').scrollTop = 0;
 }
 function requireAuth(reason, after) {
   state.afterAuth = after || null;
-  $('#authReason').textContent = reason || '投稿や参加リクエストにはニックネーム登録が必要です。地図を見るだけなら登録はいりません。';
-  setAuthMode('register');
+  $('#authReason').textContent = reason || '';
+  if (state.auth?.mustChange) setAuthView('change');
+  else setAuthView(state.auth?.user ? 'login' : 'register');
+  if (state.auth?.user?.email) $('#loginEmail').value = state.auth.user.email;
   openSheet('sheetAuth');
-  setTimeout(() => $('#authNick').focus(), 300);
 }
-$$('.auth-tab').forEach(t => t.addEventListener('click', () => setAuthMode(t.dataset.mode)));
-$('#togglePass').addEventListener('click', () => {
-  const i = $('#authPass'); const show = i.type === 'password';
-  i.type = show ? 'text' : 'password';
-  $('#togglePass').innerHTML = show ? '<i class="fa-solid fa-eye-slash"></i>' : '<i class="fa-solid fa-eye"></i>';
-});
-$('#authSubmit').addEventListener('click', async () => {
-  const nickname = $('#authNick').value.trim(), password = $('#authPass').value;
-  if (nickname.length < 2) { $('#authError').textContent = 'ニックネームは2文字以上で入力してください'; return; }
-  if (password.length < 6) { $('#authError').textContent = 'パスワードは6文字以上で入力してください'; return; }
-  $('#authSubmit').disabled = true;
+function authErr(view, msg) { $(`.auth-view[data-view="${view}"] .auth-err`).textContent = msg; }
+async function withButton(btn, fn) {
+  btn.disabled = true;
+  try { await fn(); } finally { btn.disabled = false; }
+}
+function finishAuth() {
+  closeSheets();
+  renderMarkers();
+  const f = state.afterAuth; state.afterAuth = null;
+  if (f) setTimeout(f, 300);
+}
+
+$$('.auth-tab').forEach(t => t.addEventListener('click', () => setAuthView(t.dataset.view)));
+$$('.go-view').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.view === 'forgot') $('#forgotEmail').value = $('#loginEmail').value;
+  setAuthView(b.dataset.view);
+}));
+
+/* 新規登録 → 仮パスワードをメールで受け取る */
+$('#regSubmit').addEventListener('click', () => withButton($('#regSubmit'), async () => {
+  const nickname = $('#regNick').value.trim(), email = $('#regEmail').value.trim();
+  if (nickname.length < 2) return authErr('register', 'ニックネームは2文字以上で入力してください');
+  if (!validEmail(email)) return authErr('register', 'メールアドレスを正しく入力してください');
+  if (!$('#regAgree').checked) return authErr('register', '利用上の注意への同意が必要です');
   try {
-    const j = await apiPost({ action: state.authMode, nickname, password });
-    saveAuth({ token: j.token, user: j.user });
-    $('#authPass').value = '';
-    closeSheets();
-    toast(state.authMode === 'register' ? `ようこそ、${j.user.nickname}さん！` : `おかえりなさい、${j.user.nickname}さん`);
-    renderMarkers();
-    const f = state.afterAuth; state.afterAuth = null;
-    if (f) setTimeout(f, 300);
+    const j = await apiPost({ action: 'register', nickname, email, agree: true });
+    $('#sentText').textContent = `${j.email} に仮パスワードを送りました。メールに書かれた仮パスワードでログインしてください。`;
+    $('#loginEmail').value = j.email; $('#loginPass').value = '';
+    setAuthView('sent');
+  } catch (err) { authErr('register', err.message); }
+}));
+
+/* ログイン（仮パスワードならパスワード更新へ） */
+$('#loginSubmit').addEventListener('click', () => withButton($('#loginSubmit'), async () => {
+  const email = $('#loginEmail').value.trim(), password = $('#loginPass').value;
+  if (!validEmail(email) || !password) return authErr('login', 'メールアドレスとパスワードを入力してください');
+  try {
+    const j = await apiPost({ action: 'login', email, password });
+    saveAuth({ token: j.token, user: j.user, mustChange: !!j.mustChange });
+    $('#loginPass').value = '';
+    if (j.mustChange) {
+      $('#chgCurrent').value = password; $('#chgNew').value = ''; $('#chgConfirm').value = '';
+      setAuthView('change');
+      $('#chgNew').focus();
+      return;
+    }
+    toast(`おかえりなさい、${j.user.nickname}さん`);
+    finishAuth();
+  } catch (err) { authErr('login', err.message); }
+}));
+
+/* パスワード忘れ → 仮パスワード再発行 */
+$('#forgotSubmit').addEventListener('click', () => withButton($('#forgotSubmit'), async () => {
+  const email = $('#forgotEmail').value.trim();
+  if (!validEmail(email)) return authErr('forgot', 'メールアドレスを正しく入力してください');
+  try {
+    await apiPost({ action: 'forgotPassword', email });
+    if (state.auth?.user?.email?.toLowerCase() === email.toLowerCase()) saveAuth(null);
+    $('#sentText').textContent = `${email} が登録済みであれば、新しい仮パスワードを送りました。仮パスワードでログインしてください。`;
+    $('#loginEmail').value = email; $('#loginPass').value = '';
+    setAuthView('sent');
+  } catch (err) { authErr('forgot', err.message); }
+}));
+
+/* 初回・再発行後のパスワード更新 */
+$('#chgSubmit').addEventListener('click', () => withButton($('#chgSubmit'), async () => {
+  const current = $('#chgCurrent').value, next = $('#chgNew').value, confirm = $('#chgConfirm').value;
+  if (!current) return authErr('change', '仮パスワードを入力してください');
+  const msg = checkNewPassword(next, confirm); if (msg) return authErr('change', msg);
+  if (current === next) return authErr('change', '仮パスワードと違うパスワードにしてください');
+  try {
+    const j = await apiPost({ action: 'changePassword', token: state.auth?.token, currentPassword: current, newPassword: next });
+    saveAuth({ token: state.auth.token, user: j.user, mustChange: false });
+    ['#chgCurrent', '#chgNew', '#chgConfirm'].forEach(s => $(s).value = '');
+    toast(`ようこそ、${j.user.nickname}さん！パスワードを保存しました`);
+    finishAuth();
   } catch (err) {
-    $('#authError').textContent = err.message;
-  } finally { $('#authSubmit').disabled = false; }
-});
+    if (err.data?.code === 'AUTH') { setAuthView('login'); authErr('login', err.message); return; }
+    authErr('change', err.message);
+  }
+}));
 
-$('#btnUser').addEventListener('click', () => state.auth ? openMyPage() : requireAuth());
+$('#btnUser').addEventListener('click', () => isMember() ? openMyPage() : requireAuth());
 
+/* ---------- マイページ ---------- */
 async function openMyPage() {
   $('#myTitle').textContent = state.auth.user.nickname + 'さん';
+  $('#myEmail').textContent = state.auth.user.email || '';
+  $('#setNick').value = state.auth.user.nickname;
+  ['#setCurrent', '#setNew', '#setConfirm'].forEach(s => $(s).value = '');
+  $('#setNickErr').textContent = ''; $('#setPassErr').textContent = '';
   $('#myBody').innerHTML = '<p class="text-sm font-bold text-ink/60">読み込み中...</p>';
   openSheet('sheetMy');
   try {
     const j = await apiPost({ action: 'getMyData', token: state.auth.token });
+    $('#myEmail').textContent = j.user.email || '';
     const evHtml = j.myEvents.length ? j.myEvents.map(ev => `
       <div class="border-2 border-ink rounded-2xl p-3 mb-3">
         <button class="my-ev w-full text-left flex items-center gap-2" data-id="${esc(ev.id)}">
@@ -702,10 +909,41 @@ async function openMyPage() {
       if (ev) { state.map.flyTo([ev.lat, ev.lng], 16); openDetail(ev.id); }
     }));
   } catch (err) {
+    if (handleAuthError(err)) return;
     $('#myBody').innerHTML = `<p class="text-sm text-flare font-bold">${esc(err.message)}</p>`;
-    if (err.data?.code === 'AUTH') { closeSheets(); requireAuth('もう一度ログインしてください。'); }
   }
 }
+
+$('#setNickSubmit').addEventListener('click', () => withButton($('#setNickSubmit'), async () => {
+  const nickname = $('#setNick').value.trim();
+  $('#setNickErr').textContent = '';
+  if (nickname.length < 2) { $('#setNickErr').textContent = 'ニックネームは2文字以上で入力してください'; return; }
+  if (nickname === state.auth.user.nickname) return;
+  try {
+    const j = await apiPost({ action: 'updateNickname', token: state.auth.token, nickname });
+    saveAuth({ ...state.auth, user: j.user });
+    $('#myTitle').textContent = j.user.nickname + 'さん';
+    toast('ニックネームを変更しました');
+    loadEvents(true);
+  } catch (err) {
+    if (!handleAuthError(err)) $('#setNickErr').textContent = err.message;
+  }
+}));
+
+$('#setPassSubmit').addEventListener('click', () => withButton($('#setPassSubmit'), async () => {
+  const current = $('#setCurrent').value, next = $('#setNew').value, confirm = $('#setConfirm').value;
+  $('#setPassErr').textContent = '';
+  if (!current) { $('#setPassErr').textContent = '現在のパスワードを入力してください'; return; }
+  const msg = checkNewPassword(next, confirm); if (msg) { $('#setPassErr').textContent = msg; return; }
+  try {
+    await apiPost({ action: 'changePassword', token: state.auth.token, currentPassword: current, newPassword: next });
+    ['#setCurrent', '#setNew', '#setConfirm'].forEach(s => $(s).value = '');
+    toast('パスワードを変更しました');
+  } catch (err) {
+    if (!handleAuthError(err)) $('#setPassErr').textContent = err.message;
+  }
+}));
+
 $('#btnLogout').addEventListener('click', async () => {
   const token = state.auth?.token;
   saveAuth(null); closeSheets(); renderMarkers(); toast('ログアウトしました');
@@ -721,7 +959,7 @@ function newDraft(latlng) {
 }
 function startPostAt(latlng) {
   if (state.picking) { setPickedLocation(latlng); return; }
-  if (!state.auth) return requireAuth('投稿するにはニックネーム登録が必要です。', () => startPostAt(latlng));
+  if (!isMember()) return requireAuth('投稿するには会員登録が必要です。', () => startPostAt(latlng));
   openPost(latlng);
 }
 function openPost(latlng) {
@@ -938,13 +1176,13 @@ async function submitPost() {
     setTimeout(() => openDetail(j.event.id), 900);
   } catch (err) {
     hideLoading();
-    if (err.data?.code === 'AUTH') { requireAuth('もう一度ログインしてから投稿してください。', () => openPost()); return; }
+    if (handleAuthError(err, () => openPost())) return;
     toast(err.message, 5000);
   }
 }
 
 $('#btnPost').addEventListener('click', async () => {
-  if (!state.auth) return requireAuth('投稿するにはニックネーム登録が必要です。', () => $('#btnPost').click());
+  if (!isMember()) return requireAuth('投稿するには会員登録が必要です。', () => $('#btnPost').click());
   const start = !state.draft;
   openPost(null);
   if (start && !state.draft.latlng) {
@@ -965,6 +1203,17 @@ $('#btnRefresh').addEventListener('click', async () => {
   renderUser();
   if (GAS_API_URL.includes('XXXX')) { toast('index.html の GAS_API_URL を設定してください', 6000); $('#countBadge').textContent = 'API未設定'; return; }
   locate(false).then(ll => { if (ll && !new URLSearchParams(location.search).get('e')) state.map.setView(ll, 14); });
+
+  // 保存済みログインの確認（ニックネーム変更・仮パスワード状態を反映）
+  if (state.auth?.token) {
+    apiPost({ action: 'me', token: state.auth.token })
+      .then(j => {
+        saveAuth({ token: state.auth.token, user: j.user, mustChange: !!j.mustChange });
+        if (j.mustChange) requireAuth('');
+      })
+      .catch(() => {});
+  }
+
   await loadEvents();
   const eid = new URLSearchParams(location.search).get('e');
   if (eid) {
@@ -972,7 +1221,6 @@ $('#btnRefresh').addEventListener('click', async () => {
     if (ev) { state.map.setView([ev.lat, ev.lng], 16); openDetail(eid); }
     else { toast('この募集はもう終了しています'); history.replaceState(null, '', location.pathname); }
   }
-  if (state.auth) apiPost({ action: 'me', token: state.auth.token }).catch(() => {});
   setInterval(() => { if (!document.hidden) loadEvents(true); }, 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadEvents(true); });
 })();
