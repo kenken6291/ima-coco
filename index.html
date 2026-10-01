@@ -301,6 +301,7 @@
     <div class="step hidden" data-step="3">
       <span class="label">いつまで表示する？</span>
       <div id="expireChips" class="flex flex-wrap gap-2 mb-2">
+        <button class="chip hidden" data-exp="keep" id="expKeep">そのまま</button>
         <button class="chip" data-exp="1h">1時間後</button>
         <button class="chip" data-exp="3h">3時間後</button>
         <button class="chip" data-exp="today">本日中（23:59）</button>
@@ -694,19 +695,25 @@ function openDetail(id) {
         <button id="joinSend" class="sticker bg-flare text-white w-full rounded-2xl py-3 mt-2 font-display">参加リクエストを送る</button>
       </div>
 
-      <div class="grid grid-cols-2 gap-2 mt-4">
-        ${mine
-          ? `<button id="btnDelete" class="sticker bg-white rounded-2xl py-3 font-bold text-flare"><i class="fa-solid fa-trash-can mr-1"></i>今すぐ終了</button>`
-          : `<button id="btnJoin" class="sticker bg-flare text-white rounded-2xl py-3 font-display"><i class="fa-solid fa-hand mr-1"></i>参加したい</button>`}
-        <button id="btnShare" class="sticker bg-white rounded-2xl py-3 font-bold"><i class="fa-solid fa-share-nodes mr-1"></i>シェア</button>
-      </div>
+      ${mine
+        ? `<div class="grid grid-cols-3 gap-2 mt-4">
+             <button id="btnEdit" class="sticker bg-sun rounded-2xl py-3 font-bold"><i class="fa-solid fa-pen mr-1"></i>修正</button>
+             <button id="btnDelete" class="sticker bg-white rounded-2xl py-3 font-bold text-flare"><i class="fa-solid fa-trash-can mr-1"></i>削除</button>
+             <button id="btnShare" class="sticker bg-white rounded-2xl py-3 font-bold"><i class="fa-solid fa-share-nodes mr-1"></i>シェア</button>
+           </div>`
+        : `<div class="grid grid-cols-2 gap-2 mt-4">
+             <button id="btnJoin" class="sticker bg-flare text-white rounded-2xl py-3 font-display"><i class="fa-solid fa-hand mr-1"></i>参加したい</button>
+             <button id="btnShare" class="sticker bg-white rounded-2xl py-3 font-bold"><i class="fa-solid fa-share-nodes mr-1"></i>シェア</button>
+           </div>`}
       <a class="block text-center mt-3 text-sm font-bold underline" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${ev.lat},${ev.lng}"><i class="fa-solid fa-route mr-1"></i>ここまでの道順</a>
     </div>`;
 
   $('.close-sheet-d').addEventListener('click', closeSheets);
   $('#btnShare').addEventListener('click', () => shareEvent(ev));
-  if (mine) $('#btnDelete').addEventListener('click', () => deleteEvent(ev));
-  else $('#btnJoin').addEventListener('click', () => {
+  if (mine) {
+    $('#btnEdit').addEventListener('click', () => openEdit(ev));
+    $('#btnDelete').addEventListener('click', () => deleteEvent(ev));
+  } else $('#btnJoin').addEventListener('click', () => {
     if (!isMember()) return requireAuth('参加リクエストを送るには会員登録が必要です。', () => openDetail(ev.id));
     $('#joinBox').classList.toggle('hidden');
     $('#joinMsg').focus();
@@ -750,14 +757,15 @@ async function sendJoin(ev) {
   }
 }
 
-async function deleteEvent(ev) {
-  if (!confirm('この投稿を今すぐ終了して地図から消しますか？')) return;
-  showLoading(['投稿を終了しています...']);
+async function deleteEvent(ev, fromMy) {
+  if (!confirm(`「${ev.title}」を削除して地図から消しますか？\n届いた参加リクエストも見られなくなります。`)) return;
+  showLoading(['投稿を削除しています...']);
   try {
     await apiPost({ action: 'deleteEvent', token: state.auth?.token, id: ev.id });
-    hideLoading(); closeSheets(); toast('投稿を終了しました');
+    hideLoading(); closeSheets(); toast('投稿を削除しました');
     state.events = state.events.filter(x => x.id !== ev.id);
     renderMarkers();
+    if (fromMy) setTimeout(openMyPage, 300);
   } catch (err) {
     hideLoading();
     if (!handleAuthError(err)) toast(err.message, 4000);
@@ -894,6 +902,10 @@ async function openMyPage() {
           <span class="font-bold flex-1 truncate">${esc(ev.title)}</span>
           <span class="text-xs font-bold text-ink/60 shrink-0">${remain(ev.expires_at).text}</span>
         </button>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <button class="my-edit sticker bg-sun rounded-xl py-2 text-sm font-bold" data-id="${esc(ev.id)}"><i class="fa-solid fa-pen mr-1"></i>修正</button>
+          <button class="my-del sticker bg-white rounded-xl py-2 text-sm font-bold text-flare" data-id="${esc(ev.id)}"><i class="fa-solid fa-trash-can mr-1"></i>削除</button>
+        </div>
         ${ev.requests.length ? `<ul class="mt-2 space-y-1.5">${ev.requests.map(q => `
           <li class="text-sm bg-sky rounded-xl px-3 py-2"><span class="font-bold">${esc(q.nickname)}さん</span><span class="text-xs text-ink/50 ml-1">${ago(q.created_at)}</span><br>${esc(q.message)}</li>`).join('')}</ul>`
           : '<p class="text-xs text-ink/60 mt-2">参加リクエストはまだありません</p>'}
@@ -904,10 +916,13 @@ async function openMyPage() {
     $('#myBody').innerHTML = `
       <h3 class="font-display text-base mb-2">公開中の投稿と参加リクエスト</h3>${evHtml}
       <h3 class="font-display text-base mt-5 mb-2">送った参加リクエスト</h3>${sentHtml}`;
+    const myMap = Object.fromEntries(j.myEvents.map(ev => [ev.id, ev]));
     $$('.my-ev').forEach(b => b.addEventListener('click', () => {
       const ev = state.events.find(x => x.id === b.dataset.id);
       if (ev) { state.map.flyTo([ev.lat, ev.lng], 16); openDetail(ev.id); }
     }));
+    $$('.my-edit').forEach(b => b.addEventListener('click', () => openEdit(myMap[b.dataset.id])));
+    $$('.my-del').forEach(b => b.addEventListener('click', () => deleteEvent(myMap[b.dataset.id], true)));
   } catch (err) {
     if (handleAuthError(err)) return;
     $('#myBody').innerHTML = `<p class="text-sm text-flare font-bold">${esc(err.message)}</p>`;
@@ -953,9 +968,61 @@ $('#btnLogout').addEventListener('click', async () => {
 /* ---------- 投稿フロー ---------- */
 function newDraft(latlng) {
   return {
-    latlng: latlng || null, category: null, media: null,
+    editId: null, latlng: latlng || null, category: null, media: null,
+    existingMedia: null, removeMedia: false, origExpires: null,
     exp: '3h', capacity: 'あと2人', fee: '割り勘', ages: ['誰でも'], gender: '',
   };
+}
+const AGE_VALUES = ['10代', '20代', '30代', '40代', '50代', '60代〜'];
+const GENDER_VALUES = ['女性歓迎', '男性歓迎', '女性のみ', '男性のみ'];
+const CAP_VALUES = ['あと1人', 'あと2人', 'あと3人', '何人でも', '募集なし'];
+const FEE_VALUES = ['無料', '割り勘', '各自持参'];
+
+/** 保存済みの参加条件を、年齢・性別・その他に分け直す */
+function parseConditions(text) {
+  const out = { ages: ['誰でも'], gender: '', extra: [] };
+  String(text || '').split('／').map(x => x.trim()).filter(Boolean).forEach((part, i) => {
+    if (i === 0 && part === '誰でも歓迎') { out.ages = ['誰でも']; return; }
+    if (i === 0 && part.endsWith('歓迎')) {
+      const ages = part.slice(0, -2).split('・');
+      if (ages.length && ages.every(a => AGE_VALUES.includes(a))) { out.ages = ages; return; }
+    }
+    if (GENDER_VALUES.includes(part) && !out.gender) { out.gender = part; return; }
+    out.extra.push(part);
+  });
+  return { ages: out.ages, gender: out.gender, extra: out.extra.join('／') };
+}
+
+/** 自分の投稿を修正（投稿フォームを修正モードで開く） */
+function openEdit(ev) {
+  if (!ev) return;
+  if (!isMember()) return requireAuth('修正するにはログインが必要です。', () => openEdit(ev));
+  closeSheets();
+  const cond = parseConditions(ev.conditions);
+  state.draft = {
+    ...newDraft(L.latLng(ev.lat, ev.lng)),
+    editId: ev.id,
+    category: ev.category,
+    existingMedia: ev.media_url ? { url: ev.media_url, type: ev.media_type } : null,
+    origExpires: ev.expires_at,
+    exp: 'keep',
+    capacity: CAP_VALUES.includes(ev.capacity) ? ev.capacity : '',
+    fee: FEE_VALUES.includes(ev.fee) ? ev.fee : '',
+    ages: cond.ages, gender: cond.gender,
+  };
+  resetPostForm();
+  $('#pTitle').value = ev.title; $('#pTitleCount').textContent = ev.title.length;
+  $('#pDesc').value = ev.description || ''; $('#pDescCount').textContent = (ev.description || '').length;
+  $('#capFree').value = CAP_VALUES.includes(ev.capacity) ? '' : ev.capacity;
+  $('#feeFree').value = FEE_VALUES.includes(ev.fee) ? '' : ev.fee;
+  $('#condFree').value = cond.extra.slice(0, 40);
+  renderMediaPreview();
+  syncChips();
+  state.step = 1;
+  showPickMarker(state.draft.latlng);
+  state.map.setView(state.draft.latlng, Math.max(state.map.getZoom(), 15));
+  goStep(1);
+  setTimeout(() => openSheet('sheetPost'), 250);
 }
 function startPostAt(latlng) {
   if (state.picking) { setPickedLocation(latlng); return; }
@@ -963,6 +1030,7 @@ function startPostAt(latlng) {
   openPost(latlng);
 }
 function openPost(latlng) {
+  if (state.draft?.editId) state.draft = null;
   if (!state.draft) {
     state.draft = newDraft(latlng);
     resetPostForm();
@@ -976,6 +1044,9 @@ function resetPostForm() {
   $('#pTitleCount').textContent = '0'; $('#pDescCount').textContent = '0';
   $('#mediaPreview').innerHTML = ''; $('#mediaPreview').classList.add('hidden');
   $('#expCustom').classList.add('hidden');
+  const editing = !!state.draft?.editId;
+  $('#postTitle').textContent = editing ? '投稿を修正' : '今ココ！を投稿';
+  $('#expKeep').classList.toggle('hidden', !editing);
   renderCatGrid(); syncChips();
 }
 function renderCatGrid() {
@@ -999,6 +1070,7 @@ function syncChips() {
 }
 function expiresAt() {
   const now = new Date(), d = state.draft;
+  if (d.exp === 'keep') return d.origExpires ? new Date(d.origExpires) : null;
   if (d.exp === '1h') return new Date(now.getTime() + 3600000);
   if (d.exp === '3h') return new Date(now.getTime() + 3 * 3600000);
   if (d.exp === 'today') {
@@ -1107,14 +1179,30 @@ async function onFile(e) {
   try {
     const m = file.type.startsWith('video/') || /\.(mov|mp4|webm)$/i.test(file.name) ? await readVideo(file) : await compressImage(file);
     state.draft.media = m;
-    const box = $('#mediaPreview');
-    box.innerHTML = (m.kind === 'image'
-      ? `<img src="${m.preview}" class="w-full max-h-64 object-contain" alt="プレビュー">`
-      : `<video src="${m.preview}" class="w-full max-h-64" controls playsinline muted></video>`)
-      + `<button id="mediaRemove" class="absolute top-2 right-2 sticker bg-white rounded-full w-9 h-9" aria-label="写真・動画を外す"><i class="fa-solid fa-xmark"></i></button>`;
-    box.classList.remove('hidden');
-    $('#mediaRemove').addEventListener('click', () => { state.draft.media = null; box.innerHTML = ''; box.classList.add('hidden'); });
+    state.draft.removeMedia = false;
+    renderMediaPreview();
   } catch (err) { toast(err.message, 4000); }
+}
+function renderMediaPreview() {
+  const d = state.draft, box = $('#mediaPreview');
+  let html = '';
+  if (d.media) {
+    html = d.media.kind === 'image'
+      ? `<img src="${d.media.preview}" class="w-full max-h-64 object-contain" alt="プレビュー">`
+      : `<video src="${d.media.preview}" class="w-full max-h-64" controls playsinline muted></video>`;
+  } else if (d.existingMedia && !d.removeMedia) {
+    html = d.existingMedia.type === 'image'
+      ? `<img src="${esc(d.existingMedia.url)}" class="w-full max-h-64 object-contain" alt="今の写真" referrerpolicy="no-referrer">`
+      : `<div class="text-white text-sm font-bold p-6 text-center"><i class="fa-solid fa-film mr-1"></i>今の動画を使います</div>`;
+  }
+  if (!html) { box.innerHTML = ''; box.classList.add('hidden'); return; }
+  box.innerHTML = html + `<button id="mediaRemove" class="absolute top-2 right-2 sticker bg-white rounded-full w-9 h-9" aria-label="写真・動画を外す"><i class="fa-solid fa-xmark"></i></button>`;
+  box.classList.remove('hidden');
+  $('#mediaRemove').addEventListener('click', () => {
+    if (d.media) d.media = null;
+    else if (d.existingMedia) d.removeMedia = true;
+    renderMediaPreview();
+  });
 }
 $('#fileCamera').addEventListener('change', onFile);
 $('#fileLibrary').addEventListener('change', onFile);
@@ -1127,7 +1215,7 @@ function goStep(n) {
   $$('#sheetPost .step-bar').forEach((b, i) => { b.style.background = i < n ? 'var(--flare)' : '#fff'; });
   $('#stepLabel').textContent = STEP_LABELS[n];
   $('#stepBack').classList.toggle('hidden', n === 1);
-  $('#stepNext').textContent = n === 3 ? '投稿する' : '次へ';
+  $('#stepNext').textContent = n === 3 ? (state.draft?.editId ? '修正を保存' : '投稿する') : '次へ';
   $('#sheetPost .sheet-body').scrollTop = 0;
   if (n === 3) syncChips();
   updateNav();
@@ -1150,8 +1238,11 @@ async function submitPost() {
   const d = state.draft;
   const exp = expiresAt();
   const conds = [d.ages.includes('誰でも') ? '誰でも歓迎' : d.ages.join('・') + '歓迎', d.gender, $('#condFree').value.trim()].filter(Boolean).join('／');
+  const editing = !!d.editId;
   const body = {
-    action: 'createEvent', token: state.auth?.token,
+    action: editing ? 'updateEvent' : 'createEvent', token: state.auth?.token,
+    id: d.editId || undefined,
+    removeMedia: editing && d.removeMedia && !d.media,
     title: $('#pTitle').value.trim(), description: $('#pDesc').value.trim(),
     category: d.category, lat: d.latlng.lat, lng: d.latlng.lng,
     expires_at: exp.toISOString(),
@@ -1160,9 +1251,9 @@ async function submitPost() {
     conditions: conds,
     media: d.media ? { data: d.media.data, mimeType: d.media.mimeType } : null,
   };
-  const msgs = ['Geminiが投稿をチェック中...', 'キャッチコピーを考えています...'];
+  const msgs = [editing ? 'Geminiが修正内容をチェック中...' : 'Geminiが投稿をチェック中...', 'キャッチコピーを考えています...'];
   if (d.media) msgs.push(d.media.kind === 'video' ? '動画をアップロード中...' : '写真をアップロード中...');
-  msgs.push('地図にピンを立てています...');
+  msgs.push(editing ? '修正を保存しています...' : '地図にピンを立てています...');
   showLoading(msgs);
   try {
     const j = await apiPost(body);
@@ -1171,18 +1262,19 @@ async function submitPost() {
     state.events = [j.event, ...state.events.filter(x => x.id !== j.event.id)];
     state.filter = 'all'; renderFilters(); renderMarkers();
     state.map.flyTo([j.event.lat, j.event.lng], 16, { duration: .8 });
-    burst(innerWidth / 2, innerHeight / 2);
-    toast('投稿しました！地図に載りました');
+    if (editing) toast('修正を保存しました');
+    else { burst(innerWidth / 2, innerHeight / 2); toast('投稿しました！地図に載りました'); }
     setTimeout(() => openDetail(j.event.id), 900);
   } catch (err) {
     hideLoading();
-    if (handleAuthError(err, () => openPost())) return;
+    if (handleAuthError(err, () => openSheet('sheetPost'))) return;
     toast(err.message, 5000);
   }
 }
 
 $('#btnPost').addEventListener('click', async () => {
   if (!isMember()) return requireAuth('投稿するには会員登録が必要です。', () => $('#btnPost').click());
+  if (state.draft?.editId) state.draft = null;
   const start = !state.draft;
   openPost(null);
   if (start && !state.draft.latlng) {

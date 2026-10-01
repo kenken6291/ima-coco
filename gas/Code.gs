@@ -163,6 +163,7 @@ function doPost(e) {
       case 'logout': return json_(logout_(body));
       // 投稿
       case 'createEvent': return json_(createEvent_(body));
+      case 'updateEvent': return json_(updateEvent_(body));
       case 'deleteEvent': return json_(deleteEvent_(body));
       case 'joinRequest': return json_(joinRequest_(body));
       case 'getMyData': return json_(getMyData_(body));
@@ -582,23 +583,41 @@ function publicEvent_(r, users, counts) {
 /* =========================================================
  * 投稿作成（Geminiチェック → Driveアップロード → シート追記）
  * ========================================================= */
+/** 投稿内容の入力チェック（新規・修正で共通） */
+function parseEventInput_(b) {
+  const now = Date.now();
+  const p = {
+    title: clean_(b.title, 40),
+    description: clean_(b.description, 500),
+    category: CATEGORIES[b.category] ? String(b.category) : 'other',
+    capacity: clean_(b.capacity, 20) || '何人でも',
+    fee: clean_(b.fee, 20) || '無料',
+    conditions: clean_(b.conditions, 100) || '誰でも歓迎',
+    lat: Number(b.lat),
+    lng: Number(b.lng),
+    expMs: Date.parse(String(b.expires_at || '')),
+  };
+  if (!p.title) throw apiError_('タイトルを入力してください');
+  if (!isFinite(p.lat) || !isFinite(p.lng) || Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180) throw apiError_('場所が正しくありません');
+  if (isNaN(p.expMs) || p.expMs <= now + 5 * 60000) throw apiError_('終了時刻は5分以上先にしてください');
+  if (p.expMs > now + CONFIG.MAX_EXPIRE_HOURS * 3600000) throw apiError_('終了時刻は' + CONFIG.MAX_EXPIRE_HOURS + '時間以内にしてください');
+  return p;
+}
+
+function mediaInput_(b) {
+  const media = (b.media && b.media.data) ? b.media : null;
+  if (media) {
+    const approxBytes = Math.floor(String(media.data).length * 3 / 4);
+    if (approxBytes > CONFIG.MAX_MEDIA_BYTES) throw apiError_('ファイルが大きすぎます（20MBまで）');
+  }
+  return media;
+}
+
 function createEvent_(b) {
   const user = authUser_(b.token);
-
-  const title = clean_(b.title, 40);
-  const description = clean_(b.description, 500);
-  const category = CATEGORIES[b.category] ? String(b.category) : 'other';
-  const capacity = clean_(b.capacity, 20) || '何人でも';
-  const fee = clean_(b.fee, 20) || '無料';
-  const conditions = clean_(b.conditions, 100) || '誰でも歓迎';
-  const lat = Number(b.lat), lng = Number(b.lng);
-  const expMs = Date.parse(String(b.expires_at || ''));
+  const p = parseEventInput_(b);
+  const { title, description, category, capacity, fee, conditions, lat, lng, expMs } = p;
   const now = Date.now();
-
-  if (!title) throw apiError_('タイトルを入力してください');
-  if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) throw apiError_('場所が正しくありません');
-  if (isNaN(expMs) || expMs <= now + 5 * 60000) throw apiError_('終了時刻は5分以上先にしてください');
-  if (expMs > now + CONFIG.MAX_EXPIRE_HOURS * 3600000) throw apiError_('終了時刻は' + CONFIG.MAX_EXPIRE_HOURS + '時間以内にしてください');
 
   // 同時公開数の上限
   const mine = readAll_(sheet_(CONFIG.SHEET_EVENTS))
@@ -607,11 +626,7 @@ function createEvent_(b) {
     throw apiError_('同時に公開できるのは' + CONFIG.MAX_ACTIVE_POSTS_PER_USER + '件までです。終わった投稿を削除してください');
   }
 
-  const media = (b.media && b.media.data) ? b.media : null;
-  if (media) {
-    const approxBytes = Math.floor(String(media.data).length * 3 / 4);
-    if (approxBytes > CONFIG.MAX_MEDIA_BYTES) throw apiError_('ファイルが大きすぎます（20MBまで）');
-  }
+  const media = mediaInput_(b);
 
   // 1) Gemini モデレーション & 生成
   const ai = geminiReview_({ title, description, category, capacity, fee, conditions, media });
@@ -811,6 +826,82 @@ function uploadMedia_(m, eventId) {
 function trashMedia_(fileId) {
   if (!fileId) return;
   try { DriveApp.getFileById(String(fileId)).setTrashed(true); } catch (_) {}
+}
+
+/* =========================================================
+ * 投稿の修正（本人のみ・公開中のみ）
+ *   media: 新しい写真/動画（差し替え）
+ *   removeMedia: true で写真/動画を外す
+ *   どちらも無ければ今の写真/動画をそのまま使う
+ * ========================================================= */
+function updateEvent_(b) {
+  const user = authUser_(b.token);
+  const id = String(b.id || '');
+  const findEv_ = () => readAll_(sheet_(CONFIG.SHEET_EVENTS)).find(r => String(r.id) === id);
+  const checkOwner_ = ev => {
+    if (!ev) throw apiError_('投稿が見つかりません');
+    if (String(ev.user_id) !== user.user_id) throw apiError_('自分の投稿だけ修正できます');
+    if (String(ev.status) !== 'active' || ms_(ev.expires_at) <= Date.now()) throw apiError_('終了した投稿は修正できません');
+  };
+  checkOwner_(findEv_());
+
+  const p = parseEventInput_(b);
+  const media = mediaInput_(b);
+  const removeMedia = b.removeMedia === true && !media;
+
+  // 1) Gemini で修正後の内容をチェック（キャッチコピー・絵文字・タグも作り直し）
+  const ai = geminiReview_({
+    title: p.title, description: p.description, category: p.category,
+    capacity: p.capacity, fee: p.fee, conditions: p.conditions, media: media,
+  });
+  if (!ai.safe) {
+    return { ok: false, moderation: true, error: 'この内容には修正できません：' + (ai.reason || 'ガイドラインに抵触する可能性があります') };
+  }
+
+  // 2) 新しい写真/動画のアップロード
+  let up = null;
+  if (media) up = uploadMedia_(media, id + '_' + Date.now());
+
+  // 3) シート更新
+  let oldFileId = '';
+  let saved;
+  try {
+    saved = withLock_(() => {
+      const sh = sheet_(CONFIG.SHEET_EVENTS);
+      const ev = findEv_();
+      checkOwner_(ev);
+      oldFileId = String(ev.media_file_id || '');
+      const fields = {
+        title: p.title,
+        description: p.description,
+        category: p.category,
+        icon: ai.emoji || CATEGORIES[p.category].icon,
+        summary: ai.summary || p.title.slice(0, 15),
+        lat: p.lat.toFixed(6),
+        lng: p.lng.toFixed(6),
+        expires_at: new Date(p.expMs).toISOString(),
+        capacity: p.capacity,
+        fee: p.fee,
+        conditions: p.conditions,
+        hashtags: (ai.hashtags || []).join(' '),
+      };
+      if (up) {
+        fields.media_url = up.url; fields.media_type = up.type; fields.media_file_id = up.id;
+      } else if (removeMedia) {
+        fields.media_url = ''; fields.media_type = ''; fields.media_file_id = '';
+      }
+      setFields_(sh, ev._row, fields);
+      return Object.assign({}, ev, fields);
+    });
+  } catch (err) {
+    if (up) trashMedia_(up.id);
+    throw err;
+  }
+
+  // 差し替え・削除した古いファイルはゴミ箱へ
+  if ((up || removeMedia) && oldFileId) trashMedia_(oldFileId);
+  clearEventsCache_();
+  return { ok: true, event: publicEvent_(saved, { [user.user_id]: { nickname: user.nickname } }, requestCounts_()) };
 }
 
 /* =========================================================
