@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>今CoCo（いまココ）｜今、ここで遊んでるよ！</title>
+<meta name="description" content="「今、ここで遊んでるよ！」「あと2人合流できるよ！」を地図でシェアするゲリラ型アクティビティマップ">
+<meta name="theme-color" content="#FF3D68">
+<meta property="og:title" content="今CoCo（いまココ）">
+<meta property="og:description" content="今、ここで遊んでるよ！を地図でシェア">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📍</text></svg>">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          body: ['"M PLUS Rounded 1c"', 'system-ui', 'sans-serif'],
+          display: ['"Dela Gothic One"', '"M PLUS Rounded 1c"', 'sans-serif'],
+        },
+        colors: {
+          flare: '#FF3D68', sun: '#FFD23F', ink: '#241E4E', mint: '#1FD1A5', sky: '#EEF3FF',
+        },
+      },
+    },
+  };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<style>
+  :root { --flare:#FF3D68; --sun:#FFD23F; --ink:#241E4E; --mint:#1FD1A5; --sky:#EEF3FF; }
+  html, body { height: 100%; margin: 0; overscroll-behavior: none; }
+  body { font-family: "M PLUS Rounded 1c", system-ui, sans-serif; color: var(--ink); -webkit-tap-highlight-color: transparent; background: var(--sky); }
+  #map { position: fixed; inset: 0; z-index: 0; background: #e6ecf5; }
+  .leaflet-control-attribution { font-size: 10px; }
+  .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { scrollbar-width: none; }
+  .pt-safe { padding-top: max(env(safe-area-inset-top), 10px); }
+  .pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 16px); }
+
+  /* ステッカー風ボタン */
+  .sticker { border: 2.5px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); transition: transform .08s, box-shadow .08s; }
+  .sticker:active { transform: translate(3px,3px); box-shadow: 0 0 0 var(--ink); }
+  .sticker:disabled { opacity: .45; pointer-events: none; }
+  :focus-visible { outline: 3px solid var(--flare); outline-offset: 2px; }
+
+  /* ピン */
+  .coco-pin { position: relative; width: 52px; height: 62px; }
+  .coco-pin-inner { position: absolute; inset: 0; animation: pin-drop .55s cubic-bezier(.2,1.6,.4,1) both, pin-bob 2.6s ease-in-out infinite; animation-delay: var(--d,0s), calc(var(--d,0s) + .55s); }
+  .coco-pin-body { position: absolute; left: 4px; top: 0; width: 44px; height: 44px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); background: var(--c); border: 3px solid #fff; box-shadow: 0 0 0 2px var(--ink), 2px 4px 0 2px rgba(36,30,78,.35); }
+  .coco-pin-emoji { position: absolute; left: 4px; top: 0; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 22px; line-height: 1; }
+  .coco-pin-shadow { position: absolute; left: 17px; bottom: 2px; width: 18px; height: 6px; border-radius: 50%; background: rgba(36,30,78,.3); }
+  .coco-pin-badge { position: absolute; right: -4px; top: -6px; background: var(--sun); color: var(--ink); border: 2px solid var(--ink); font-size: 9px; font-weight: 800; padding: 0 4px; border-radius: 8px; line-height: 14px; }
+  .coco-pin.soon .coco-pin-body { animation: soon 1.1s ease-in-out infinite; }
+  .coco-pin.mine .coco-pin-body { border-color: var(--sun); }
+  @keyframes pin-drop { 0% { transform: translateY(-70px) scale(.5); opacity: 0; } 100% { transform: none; opacity: 1; } }
+  @keyframes pin-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+  @keyframes soon { 0%,100% { box-shadow: 0 0 0 2px var(--ink), 0 0 0 4px rgba(255,61,104,.7); } 50% { box-shadow: 0 0 0 2px var(--ink), 0 0 0 14px rgba(255,61,104,0); } }
+
+  .me-dot { width: 18px; height: 18px; border-radius: 50%; background: #2F6BFF; border: 3px solid #fff; box-shadow: 0 0 0 2px var(--ink); position: relative; }
+  .me-dot::after { content: ''; position: absolute; inset: -10px; border-radius: 50%; background: rgba(47,107,255,.25); animation: ring 2s ease-out infinite; }
+  @keyframes ring { 0% { transform: scale(.4); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+
+  .pick-pin { font-size: 40px; filter: drop-shadow(2px 3px 0 rgba(36,30,78,.4)); animation: pin-drop .4s cubic-bezier(.2,1.6,.4,1) both; }
+
+  /* シート */
+  .backdrop { position: fixed; inset: 0; background: rgba(36,30,78,.45); z-index: 1000; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .backdrop.open { opacity: 1; pointer-events: auto; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1001; max-height: 90vh; background: #fff; border-top: 2.5px solid var(--ink); border-radius: 28px 28px 0 0; transform: translateY(105%); transition: transform .28s cubic-bezier(.2,.9,.3,1); display: flex; flex-direction: column; margin: 0 auto; max-width: 560px; }
+  .sheet.open { transform: translateY(0); }
+  .sheet-grab { width: 44px; height: 5px; border-radius: 3px; background: #d4d1e6; margin: 10px auto 4px; flex-shrink: 0; }
+  .sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  @media (min-width: 600px) { .sheet { border: 2.5px solid var(--ink); border-radius: 28px; bottom: 20px; } }
+
+  .chip { border: 2px solid var(--ink); border-radius: 999px; padding: 6px 14px; font-weight: 700; font-size: 14px; background: #fff; white-space: nowrap; }
+  .chip[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .cat-btn[aria-pressed="true"] { background: var(--sun); }
+  .filter-btn[aria-pressed="true"] { background: var(--ink); color: #fff; }
+
+  .field { width: 100%; border: 2px solid var(--ink); border-radius: 14px; padding: 10px 12px; font-size: 16px; background: #fff; }
+  .field:focus { outline: none; box-shadow: 0 0 0 3px rgba(255,61,104,.35); }
+  .label { font-weight: 800; font-size: 14px; margin-bottom: 6px; display: block; }
+
+  .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 110px); transform: translate(-50%, 20px); opacity: 0; z-index: 2000; transition: all .25s; pointer-events: none; max-width: 90vw; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  .loader-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--flare); display: inline-block; animation: hop .9s ease-in-out infinite; }
+  .loader-dot:nth-child(2) { background: var(--sun); animation-delay: .15s; }
+  .loader-dot:nth-child(3) { background: var(--mint); animation-delay: .3s; }
+  @keyframes hop { 0%,100% { transform: translateY(0); } 40% { transform: translateY(-14px); } }
+
+  .burst { position: fixed; z-index: 3000; pointer-events: none; font-size: 28px; animation: burst 1s ease-out forwards; }
+  @keyframes burst { 0% { transform: translate(0,0) scale(.4); opacity: 1; } 100% { transform: translate(var(--x), var(--y)) scale(1.2); opacity: 0; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .coco-pin-inner, .coco-pin.soon .coco-pin-body, .me-dot::after, .loader-dot, .burst, .pick-pin { animation: none !important; }
+    .sheet, .backdrop, .toast { transition: none; }
+  }
+</style>
+</head>
+<body class="font-body">
+
+<div id="map" aria-label="今CoCoマップ"></div>
+
+<!-- ヘッダー -->
+<header class="fixed top-0 inset-x-0 z-[500] pt-safe pointer-events-none">
+  <div class="flex items-center justify-between px-3 gap-2">
+    <h1 class="pointer-events-auto sticker bg-flare text-white rounded-2xl px-3 py-1.5 font-display text-xl leading-none tracking-wide select-none" style="text-shadow:2px 2px 0 var(--ink)">今CoCo</h1>
+    <button id="btnUser" class="pointer-events-auto sticker bg-white rounded-full pl-3 pr-4 py-2 text-sm font-bold flex items-center gap-2 max-w-[55%]">
+      <i class="fa-solid fa-circle-user text-lg"></i><span id="userLabel" class="truncate">ニックネーム登録</span>
+    </button>
+  </div>
+  <nav id="filterBar" class="pointer-events-auto flex gap-2 overflow-x-auto no-scrollbar px-3 pt-3 pb-2" aria-label="カテゴリで絞り込み"></nav>
+</header>
+
+<!-- 件数・ピック案内 -->
+<div id="countBadge" class="fixed z-[500] left-3 bg-white sticker rounded-full px-3 py-1 text-xs font-bold" style="top:calc(max(env(safe-area-inset-top),10px) + 104px)">読み込み中…</div>
+<div id="pickBanner" class="hidden fixed z-[600] inset-x-3 bg-sun sticker rounded-2xl px-4 py-3 text-sm font-bold flex items-center justify-between gap-2" style="top:calc(max(env(safe-area-inset-top),10px) + 104px)">
+  <span><i class="fa-solid fa-hand-pointer mr-1"></i>地図をタップして場所を決めてください</span>
+  <button id="pickCancel" class="underline shrink-0">やめる</button>
+</div>
+
+<!-- 右下ボタン -->
+<div class="fixed z-[500] right-3 flex flex-col items-end gap-3" style="bottom:calc(env(safe-area-inset-bottom) + 20px)">
+  <button id="btnRefresh" class="sticker bg-white w-12 h-12 rounded-full text-lg" aria-label="再読み込み"><i class="fa-solid fa-rotate"></i></button>
+  <button id="btnLocate" class="sticker bg-white w-12 h-12 rounded-full text-lg" aria-label="現在地へ移動"><i class="fa-solid fa-location-crosshairs"></i></button>
+  <button id="btnPost" class="sticker bg-flare text-white rounded-full h-16 pl-5 pr-6 font-display text-lg flex items-center gap-2">
+    <i class="fa-solid fa-plus text-xl"></i>今ココ！
+  </button>
+</div>
+<p class="fixed z-[400] left-3 text-[11px] font-bold text-ink/70 bg-white/80 rounded-full px-2 py-0.5" style="bottom:calc(env(safe-area-inset-bottom) + 24px)">地図を長押しでその場所に投稿</p>
+
+<div id="backdrop" class="backdrop"></div>
+
+<!-- 詳細シート -->
+<section id="sheetDetail" class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+  <div class="sheet-grab"></div>
+  <div class="sheet-body pb-safe" id="detailBody"></div>
+</section>
+
+<!-- 認証シート -->
+<section id="sheetAuth" class="sheet" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+  <div class="sheet-grab"></div>
+  <div class="sheet-body px-5 pb-safe">
+    <div class="flex items-center justify-between mt-2">
+      <h2 id="authTitle" class="font-display text-xl">仲間入りしよう</h2>
+      <button class="close-sheet w-10 h-10 text-xl" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <p id="authReason" class="text-sm mt-1 mb-4">投稿や参加リクエストにはニックネーム登録が必要です。地図を見るだけなら登録はいりません。</p>
+    <div class="flex gap-2 mb-4" role="tablist">
+      <button class="chip auth-tab" data-mode="register" aria-pressed="true">はじめて</button>
+      <button class="chip auth-tab" data-mode="login" aria-pressed="false">登録済みの方</button>
+    </div>
+    <label class="label" for="authNick">ニックネーム</label>
+    <input id="authNick" class="field mb-3" maxlength="20" autocomplete="username" placeholder="例：キャンプ好きのケン">
+    <label class="label" for="authPass">パスワード（6文字以上）</label>
+    <div class="relative mb-2">
+      <input id="authPass" type="password" class="field pr-12" maxlength="64" autocomplete="new-password">
+      <button id="togglePass" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9" aria-label="パスワードを表示"><i class="fa-solid fa-eye"></i></button>
+    </div>
+    <p id="authError" class="text-flare text-sm font-bold min-h-[1.25rem]"></p>
+    <button id="authSubmit" class="sticker bg-flare text-white w-full rounded-2xl py-3 mt-2 font-display text-lg">登録してはじめる</button>
+    <p class="text-xs text-ink/60 mt-3">パスワードは暗号化して保存されます。忘れると復旧できないのでメモしておいてください。</p>
+  </div>
+</section>
+
+<!-- 投稿シート -->
+<section id="sheetPost" class="sheet" role="dialog" aria-modal="true" aria-labelledby="postTitle">
+  <div class="sheet-grab"></div>
+  <div class="px-5 pt-1">
+    <div class="flex items-center justify-between">
+      <h2 id="postTitle" class="font-display text-xl">今ココ！を投稿</h2>
+      <button class="close-sheet w-10 h-10 text-xl" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="flex gap-1.5 mt-2" aria-hidden="true">
+      <div class="step-bar h-2 flex-1 rounded-full border-2 border-ink"></div>
+      <div class="step-bar h-2 flex-1 rounded-full border-2 border-ink"></div>
+      <div class="step-bar h-2 flex-1 rounded-full border-2 border-ink"></div>
+    </div>
+    <p id="stepLabel" class="text-xs font-bold mt-1 text-ink/70"></p>
+  </div>
+
+  <div class="sheet-body px-5 pt-3">
+    <!-- STEP 1 -->
+    <div class="step" data-step="1">
+      <span class="label">場所</span>
+      <div class="flex items-center gap-2 mb-1">
+        <div id="locText" class="flex-1 text-sm font-bold bg-sky rounded-xl px-3 py-2.5 border-2 border-ink truncate">未設定</div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 mb-5">
+        <button id="useGps" class="sticker bg-white rounded-xl py-2.5 text-sm font-bold"><i class="fa-solid fa-location-crosshairs mr-1"></i>現在地を使う</button>
+        <button id="pickOnMap" class="sticker bg-white rounded-xl py-2.5 text-sm font-bold"><i class="fa-solid fa-map-pin mr-1"></i>地図で選ぶ</button>
+      </div>
+      <span class="label">なにしてる？</span>
+      <div id="catGrid" class="grid grid-cols-4 gap-2 mb-4"></div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="step hidden" data-step="2">
+      <label class="label" for="pTitle">タイトル</label>
+      <input id="pTitle" class="field mb-1" maxlength="40" placeholder="例：多摩川の河原でBBQ中！">
+      <p class="text-right text-xs text-ink/50 mb-3"><span id="pTitleCount">0</span>/40</p>
+      <label class="label" for="pDesc">ひとこと</label>
+      <textarea id="pDesc" class="field mb-1" rows="4" maxlength="500" placeholder="どんな感じ？目印は？持ち物は？"></textarea>
+      <p class="text-right text-xs text-ink/50 mb-3"><span id="pDescCount">0</span>/500</p>
+      <span class="label">写真・動画（任意）</span>
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <label class="sticker bg-white rounded-xl py-2.5 text-sm font-bold text-center cursor-pointer">
+          <i class="fa-solid fa-camera mr-1"></i>撮影する
+          <input id="fileCamera" type="file" accept="image/*,video/*" capture="environment" class="hidden">
+        </label>
+        <label class="sticker bg-white rounded-xl py-2.5 text-sm font-bold text-center cursor-pointer">
+          <i class="fa-solid fa-images mr-1"></i>選ぶ
+          <input id="fileLibrary" type="file" accept="image/*,video/*" class="hidden">
+        </label>
+      </div>
+      <div id="mediaPreview" class="hidden relative rounded-2xl overflow-hidden border-2 border-ink mb-4 bg-black"></div>
+      <p class="text-xs text-ink/60 mb-4">動画は15MBまで。写真は自動で軽くしてから送ります。</p>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="step hidden" data-step="3">
+      <span class="label">いつまで表示する？</span>
+      <div id="expireChips" class="flex flex-wrap gap-2 mb-2">
+        <button class="chip" data-exp="1h">1時間後</button>
+        <button class="chip" data-exp="3h">3時間後</button>
+        <button class="chip" data-exp="today">本日中（23:59）</button>
+        <button class="chip" data-exp="custom">日時を指定</button>
+      </div>
+      <input id="expCustom" type="datetime-local" class="field hidden mb-2">
+      <p id="expPreview" class="text-xs font-bold text-ink/70 mb-5"></p>
+
+      <span class="label">募集人数</span>
+      <div id="capChips" class="flex flex-wrap gap-2 mb-2">
+        <button class="chip" data-v="あと1人">あと1人</button>
+        <button class="chip" data-v="あと2人">あと2人</button>
+        <button class="chip" data-v="あと3人">あと3人</button>
+        <button class="chip" data-v="何人でも">何人でも</button>
+        <button class="chip" data-v="募集なし">見てるだけOK</button>
+      </div>
+      <input id="capFree" class="field mb-5" maxlength="20" placeholder="自由入力（例：あと5人くらい）">
+
+      <span class="label">参加費</span>
+      <div id="feeChips" class="flex flex-wrap gap-2 mb-2">
+        <button class="chip" data-v="無料">無料</button>
+        <button class="chip" data-v="割り勘">割り勘</button>
+        <button class="chip" data-v="各自持参">各自持参</button>
+      </div>
+      <input id="feeFree" class="field mb-5" maxlength="20" placeholder="自由入力（例：1,000円）">
+
+      <span class="label">年齢</span>
+      <div id="ageChips" class="flex flex-wrap gap-2 mb-4">
+        <button class="chip" data-v="誰でも">誰でも</button>
+        <button class="chip" data-v="10代">10代</button>
+        <button class="chip" data-v="20代">20代</button>
+        <button class="chip" data-v="30代">30代</button>
+        <button class="chip" data-v="40代">40代</button>
+        <button class="chip" data-v="50代">50代</button>
+        <button class="chip" data-v="60代〜">60代〜</button>
+      </div>
+      <span class="label">性別</span>
+      <div id="genderChips" class="flex flex-wrap gap-2 mb-4">
+        <button class="chip" data-v="">問わない</button>
+        <button class="chip" data-v="女性歓迎">女性歓迎</button>
+        <button class="chip" data-v="男性歓迎">男性歓迎</button>
+        <button class="chip" data-v="女性のみ">女性のみ</button>
+        <button class="chip" data-v="男性のみ">男性のみ</button>
+      </div>
+      <label class="label" for="condFree">そのほかの条件</label>
+      <input id="condFree" class="field mb-2" maxlength="40" placeholder="例：道具不要、初心者歓迎">
+      <p class="text-xs text-ink/60 mb-4">投稿はGeminiが内容をチェックしてから地図に載ります。</p>
+    </div>
+  </div>
+
+  <div class="px-5 pt-3 pb-safe border-t-2 border-ink/10 flex gap-2">
+    <button id="stepBack" class="sticker bg-white rounded-2xl px-5 py-3 font-bold">戻る</button>
+    <button id="stepNext" class="sticker bg-ink text-white rounded-2xl py-3 flex-1 font-display text-lg">次へ</button>
+  </div>
+</section>
+
+<!-- マイページ -->
+<section id="sheetMy" class="sheet" role="dialog" aria-modal="true" aria-labelledby="myTitle">
+  <div class="sheet-grab"></div>
+  <div class="sheet-body px-5 pb-safe">
+    <div class="flex items-center justify-between mt-2">
+      <h2 id="myTitle" class="font-display text-xl truncate"></h2>
+      <button class="close-sheet w-10 h-10 text-xl" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="myBody" class="mt-3"></div>
+    <button id="btnLogout" class="w-full mt-6 py-3 font-bold text-ink/70 underline">ログアウト</button>
+  </div>
+</section>
+
+<!-- ローディング -->
+<div id="loading" class="hidden fixed inset-0 z-[2500] bg-ink/70 flex flex-col items-center justify-center gap-5 text-white">
+  <div class="flex gap-2"><span class="loader-dot"></span><span class="loader-dot"></span><span class="loader-dot"></span></div>
+  <p id="loadingText" class="font-bold text-lg" aria-live="polite">送信中...</p>
+</div>
+
+<div id="toast" class="toast sticker bg-ink text-white rounded-2xl px-4 py-3 text-sm font-bold" role="status" aria-live="polite"></div>
+
+<script>
+/* =========================================================
+ * 設定：GASのウェブアプリURLに書き換えてください
+ * ========================================================= */
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxxQSPk7DVxkqxCOg-7ptiq7kYNumIdaHkaRwnPsbxf7Tv8diDNPvlFXrtepWp2gKb5qw/exec';
+
+const CATS = [
+  { id: 'camp',       label: 'キャンプ',   icon: '⛺', color: '#2BB673' },
+  { id: 'bbq',        label: 'BBQ',       icon: '🍖', color: '#FF8A3D' },
+  { id: 'fes',        label: 'フェス',     icon: '🎪', color: '#A45CFF' },
+  { id: 'karaoke',    label: 'カラオケ',   icon: '🎤', color: '#FF4FB0' },
+  { id: 'boardgame',  label: 'ボドゲ',     icon: '🎲', color: '#5865F2' },
+  { id: 'pingpong',   label: '卓球',       icon: '🏓', color: '#FF4A4A' },
+  { id: 'running',    label: 'ランニング', icon: '🏃', color: '#14B8D4' },
+  { id: 'campingcar', label: 'キャンカー', icon: '🚐', color: '#3A8DFF' },
+  { id: 'cafe',       label: 'カフェ',     icon: '☕', color: '#B07A3A' },
+  { id: 'sports',     label: 'スポーツ',   icon: '⚽', color: '#22A55A' },
+  { id: 'other',      label: 'その他',     icon: '📍', color: '#7A7896' },
+];
+const CAT = Object.fromEntries(CATS.map(c => [c.id, c]));
+const LS_KEY = 'imacoco_auth_v1';
+const MAX_VIDEO_BYTES = 15 * 1024 * 1024;
+
+const state = {
+  map: null, events: [], markers: new Map(), filter: 'all',
+  auth: loadAuth(), meLatLng: null, meMarker: null,
+  picking: false, pickMarker: null, openEventId: null, tick: null,
+  authMode: 'register', afterAuth: null,
+  step: 1,
+  draft: null,
+};
+
+/* ---------- ユーティリティ ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function loadAuth() { try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (_) { return null; } }
+function saveAuth(a) { state.auth = a; try { a ? localStorage.setItem(LS_KEY, JSON.stringify(a)) : localStorage.removeItem(LS_KEY); } catch (_) {} renderUser(); }
+function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms); }
+function pad(n) { return String(n).padStart(2, '0'); }
+function fmtTime(d) { return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function remain(iso) {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return { text: '終了しました', ms };
+  const h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000), s = Math.floor(ms % 60000 / 1000);
+  return { text: h > 0 ? `あと${h}時間${pad(m)}分` : `あと${m}分${pad(s)}秒`, ms };
+}
+function ago(iso) {
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return 'たった今'; if (m < 60) return `${m}分前`;
+  const h = Math.floor(m / 60); return h < 24 ? `${h}時間前` : `${Math.floor(h / 24)}日前`;
+}
+
+/* ---------- API（GASのリダイレクト／CORS対応） ---------- */
+async function handleRes(res) {
+  const text = await res.text();
+  let j;
+  try { j = JSON.parse(text); } catch (_) { throw new Error('サーバーの応答を読めません。GASのデプロイ設定（アクセス：全員）を確認してください'); }
+  if (!j.ok) {
+    if (j.code === 'AUTH') saveAuth(null);
+    const e = new Error(j.error || 'エラーが発生しました'); e.data = j; throw e;
+  }
+  return j;
+}
+async function apiGet(params) {
+  const url = GAS_API_URL + '?' + new URLSearchParams({ ...params, _: Date.now() });
+  return handleRes(await fetch(url, { method: 'GET', redirect: 'follow' }));
+}
+async function apiPost(body) {
+  // text/plain でプリフライトを回避
+  return handleRes(await fetch(GAS_API_URL, {
+    method: 'POST', redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body),
+  }));
+}
+
+/* ---------- シート ---------- */
+function openSheet(id) {
+  $$('.sheet.open').forEach(s => { if (s.id !== id) s.classList.remove('open'); });
+  $('#' + id).classList.add('open');
+  $('#backdrop').classList.add('open');
+}
+function closeSheets() {
+  $$('.sheet.open').forEach(s => s.classList.remove('open'));
+  $('#backdrop').classList.remove('open');
+  state.openEventId = null;
+  clearInterval(state.tick);
+  const v = $('#detailBody iframe'); if (v) v.src = 'about:blank';
+  clearPickMarker();
+  if (location.search.includes('e=')) history.replaceState(null, '', location.pathname);
+}
+$('#backdrop').addEventListener('click', closeSheets);
+$$('.close-sheet').forEach(b => b.addEventListener('click', closeSheets));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheets(); });
+
+function showLoading(messages) {
+  const el = $('#loading'), t = $('#loadingText');
+  let i = 0; t.textContent = messages[0];
+  el.classList.remove('hidden');
+  clearInterval(showLoading._t);
+  showLoading._t = setInterval(() => { i = (i + 1) % messages.length; t.textContent = messages[i]; }, 1800);
+}
+function hideLoading() { clearInterval(showLoading._t); $('#loading').classList.add('hidden'); }
+
+function burst(x, y) {
+  const em = ['🎉', '✨', '📍', '🙌', '🔥'];
+  for (let i = 0; i < 12; i++) {
+    const s = document.createElement('div');
+    s.className = 'burst'; s.textContent = em[i % em.length];
+    const a = Math.PI * 2 * i / 12, r = 90 + Math.random() * 60;
+    s.style.left = x + 'px'; s.style.top = y + 'px';
+    s.style.setProperty('--x', Math.cos(a) * r + 'px'); s.style.setProperty('--y', Math.sin(a) * r + 'px');
+    document.body.appendChild(s); setTimeout(() => s.remove(), 1100);
+  }
+}
+
+/* ---------- 地図 ---------- */
+function initMap() {
+  state.map = L.map('map', { zoomControl: false, attributionControl: true, tapHold: true }).setView([35.681, 139.767], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap contributors',
+  }).addTo(state.map);
+
+  state.map.on('contextmenu', e => startPostAt(e.latlng));
+  state.map.on('click', e => { if (state.picking) setPickedLocation(e.latlng); });
+}
+
+function locate(fly = true) {
+  if (!navigator.geolocation) { toast('この端末では現在地を取得できません'); return Promise.resolve(null); }
+  return new Promise(resolve => {
+    navigator.geolocation.getCurrentPosition(pos => {
+      const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      state.meLatLng = ll;
+      if (!state.meMarker) {
+        state.meMarker = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div class="me-dot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), interactive: false, zIndexOffset: -100 }).addTo(state.map);
+      } else state.meMarker.setLatLng(ll);
+      if (fly) state.map.flyTo(ll, 15, { duration: .8 });
+      resolve(ll);
+    }, err => {
+      toast(err.code === 1 ? '位置情報の利用が許可されていません' : '現在地を取得できませんでした');
+      resolve(null);
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+  });
+}
+
+function pinIcon(ev, i) {
+  const c = CAT[ev.category] || CAT.other;
+  const r = new Date(ev.expires_at).getTime() - Date.now();
+  const isNew = Date.now() - new Date(ev.created_at).getTime() < 15 * 60000;
+  const mine = state.auth && state.auth.user && state.auth.user.user_id === ev.user_id;
+  const cls = ['coco-pin', r < 30 * 60000 ? 'soon' : '', mine ? 'mine' : ''].join(' ');
+  return L.divIcon({
+    className: '',
+    html: `<div class="${cls}" style="--c:${c.color};--d:${Math.min(i, 20) * 0.04}s">
+             <div class="coco-pin-shadow"></div>
+             <div class="coco-pin-inner">
+               <div class="coco-pin-body"></div>
+               <div class="coco-pin-emoji">${esc(ev.icon || c.icon)}</div>
+               ${isNew ? '<span class="coco-pin-badge">NEW</span>' : ''}
+             </div>
+           </div>`,
+    iconSize: [52, 62], iconAnchor: [26, 56],
+  });
+}
+
+function renderMarkers() {
+  state.markers.forEach(m => m.remove());
+  state.markers.clear();
+  const list = state.events.filter(ev => state.filter === 'all' || ev.category === state.filter);
+  list.forEach((ev, i) => {
+    const m = L.marker([ev.lat, ev.lng], { icon: pinIcon(ev, i), title: ev.title, keyboard: true })
+      .on('click', () => openDetail(ev.id))
+      .addTo(state.map);
+    state.markers.set(ev.id, m);
+  });
+  const label = state.filter === 'all' ? '' : (CAT[state.filter]?.label + 'で ');
+  $('#countBadge').textContent = list.length ? `${label}いま ${list.length} 件が遊んでます` : `${label}いまは投稿がありません。一番乗りしよう！`;
+}
+
+async function loadEvents(silent) {
+  try {
+    const j = await apiGet({ action: 'getEvents' });
+    state.events = (j.events || []).filter(ev => isFinite(ev.lat) && isFinite(ev.lng));
+    renderMarkers();
+    if (state.openEventId) {
+      const ev = state.events.find(x => x.id === state.openEventId);
+      if (!ev) { closeSheets(); toast('この募集は終了しました'); }
+    }
+  } catch (err) {
+    if (!silent) toast(err.message, 4000);
+    $('#countBadge').textContent = '読み込みに失敗しました';
+  }
+}
+
+/* ---------- フィルタ ---------- */
+function renderFilters() {
+  const items = [{ id: 'all', label: 'すべて', icon: '✨' }, ...CATS];
+  $('#filterBar').innerHTML = items.map(c =>
+    `<button class="filter-btn sticker bg-white rounded-full px-3 py-1.5 text-sm font-bold whitespace-nowrap shrink-0" data-cat="${c.id}" aria-pressed="${c.id === state.filter}">
+      <span class="mr-0.5">${c.icon}</span>${esc(c.label)}</button>`).join('');
+  $$('#filterBar .filter-btn').forEach(b => b.addEventListener('click', () => {
+    state.filter = b.dataset.cat;
+    $$('#filterBar .filter-btn').forEach(x => x.setAttribute('aria-pressed', x === b));
+    renderMarkers();
+  }));
+}
+
+/* ---------- 詳細 ---------- */
+function openDetail(id) {
+  const ev = state.events.find(x => x.id === id);
+  if (!ev) { toast('この募集は見つかりませんでした'); return; }
+  state.openEventId = id;
+  const c = CAT[ev.category] || CAT.other;
+  const mine = state.auth?.user?.user_id === ev.user_id;
+
+  let media = '';
+  if (ev.media_url && ev.media_type === 'image') {
+    media = `<img src="${esc(ev.media_url)}" alt="${esc(ev.title)}の写真" class="w-full max-h-[42vh] object-cover bg-sky" referrerpolicy="no-referrer" loading="lazy">`;
+  } else if (ev.media_url && ev.media_type === 'video') {
+    media = `<div class="relative w-full bg-black" style="aspect-ratio:16/9"><iframe src="${esc(ev.media_url)}" class="absolute inset-0 w-full h-full" allow="autoplay; fullscreen" allowfullscreen title="${esc(ev.title)}の動画"></iframe></div>`;
+  }
+
+  $('#detailBody').innerHTML = `
+    ${media ? `<div class="mx-4 mt-2 rounded-2xl overflow-hidden border-2 border-ink">${media}</div>` : ''}
+    <div class="px-5 pt-4">
+      <div class="flex items-start gap-3">
+        <div class="w-14 h-14 shrink-0 rounded-2xl border-2 border-ink flex items-center justify-center text-3xl" style="background:${c.color}">${esc(ev.icon || c.icon)}</div>
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-bold text-ink/60">${esc(c.label)}　${esc(ev.nickname)}さん　${ago(ev.created_at)}</p>
+          <h2 id="dTitle" class="font-display text-xl leading-snug break-words">${esc(ev.title)}</h2>
+        </div>
+        <button class="close-sheet-d w-10 h-10 text-xl shrink-0" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      ${ev.summary ? `<p class="inline-block mt-3 bg-sun border-2 border-ink rounded-xl px-3 py-1 font-bold">${esc(ev.summary)}</p>` : ''}
+
+      <div class="mt-4 flex items-center gap-2 bg-ink text-white rounded-2xl px-4 py-3">
+        <i class="fa-solid fa-hourglass-half text-sun"></i>
+        <span id="countdown" class="font-display text-lg">${remain(ev.expires_at).text}</span>
+        <span class="ml-auto text-xs opacity-80">${fmtTime(new Date(ev.expires_at))} まで</span>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+        <div class="border-2 border-ink rounded-xl py-2"><p class="text-[11px] font-bold text-ink/60">募集</p><p class="font-bold text-sm break-words px-1">${esc(ev.capacity)}</p></div>
+        <div class="border-2 border-ink rounded-xl py-2"><p class="text-[11px] font-bold text-ink/60">参加費</p><p class="font-bold text-sm break-words px-1">${esc(ev.fee)}</p></div>
+        <div class="border-2 border-ink rounded-xl py-2"><p class="text-[11px] font-bold text-ink/60">参加希望</p><p class="font-bold text-sm">${ev.request_count}人</p></div>
+      </div>
+      ${ev.conditions ? `<p class="mt-3 text-sm"><i class="fa-solid fa-user-check mr-1 text-mint"></i><span class="font-bold">条件：</span>${esc(ev.conditions)}</p>` : ''}
+      ${ev.description ? `<p class="mt-3 whitespace-pre-wrap break-words leading-relaxed">${esc(ev.description)}</p>` : ''}
+      ${ev.hashtags?.length ? `<p class="mt-3 flex flex-wrap gap-1.5">${ev.hashtags.map(t => `<span class="text-xs font-bold bg-sky border border-ink/30 rounded-full px-2 py-0.5">${esc(t)}</span>`).join('')}</p>` : ''}
+
+      <div id="joinBox" class="hidden mt-4">
+        <label class="label" for="joinMsg">ひとことメッセージ</label>
+        <textarea id="joinMsg" class="field" rows="2" maxlength="140" placeholder="例：あと10分で着きます！"></textarea>
+        <button id="joinSend" class="sticker bg-flare text-white w-full rounded-2xl py-3 mt-2 font-display">参加リクエストを送る</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 mt-4">
+        ${mine
+          ? `<button id="btnDelete" class="sticker bg-white rounded-2xl py-3 font-bold text-flare"><i class="fa-solid fa-trash-can mr-1"></i>今すぐ終了</button>`
+          : `<button id="btnJoin" class="sticker bg-flare text-white rounded-2xl py-3 font-display"><i class="fa-solid fa-hand mr-1"></i>参加したい</button>`}
+        <button id="btnShare" class="sticker bg-white rounded-2xl py-3 font-bold"><i class="fa-solid fa-share-nodes mr-1"></i>シェア</button>
+      </div>
+      <a class="block text-center mt-3 text-sm font-bold underline" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${ev.lat},${ev.lng}"><i class="fa-solid fa-route mr-1"></i>ここまでの道順</a>
+    </div>`;
+
+  $('.close-sheet-d').addEventListener('click', closeSheets);
+  $('#btnShare').addEventListener('click', () => shareEvent(ev));
+  if (mine) $('#btnDelete').addEventListener('click', () => deleteEvent(ev));
+  else $('#btnJoin').addEventListener('click', () => {
+    if (!state.auth) return requireAuth('参加リクエストを送るにはニックネーム登録が必要です。', () => openDetail(ev.id));
+    $('#joinBox').classList.toggle('hidden');
+    $('#joinMsg').focus();
+  });
+  const js = $('#joinSend'); if (js) js.addEventListener('click', () => sendJoin(ev));
+
+  clearInterval(state.tick);
+  state.tick = setInterval(() => {
+    const el = $('#countdown'); if (!el) return;
+    const r = remain(ev.expires_at); el.textContent = r.text;
+    if (r.ms <= 0) { clearInterval(state.tick); loadEvents(true); }
+  }, 1000);
+
+  history.replaceState(null, '', '?e=' + encodeURIComponent(ev.id));
+  openSheet('sheetDetail');
+  $('#sheetDetail .sheet-body').scrollTop = 0;
+}
+
+async function shareEvent(ev) {
+  const url = location.origin + location.pathname + '?e=' + encodeURIComponent(ev.id);
+  const text = `${ev.icon} ${ev.title}${ev.summary ? '｜' + ev.summary : ''}\n${remain(ev.expires_at).text}まで募集中！ #今CoCo`;
+  try {
+    if (navigator.share) { await navigator.share({ title: '今CoCo', text, url }); return; }
+    await navigator.clipboard.writeText(text + '\n' + url);
+    toast('リンクをコピーしました');
+  } catch (err) {
+    if (err && err.name !== 'AbortError') toast('シェアできませんでした');
+  }
+}
+
+async function sendJoin(ev) {
+  showLoading(['参加リクエストを送っています...']);
+  try {
+    await apiPost({ action: 'joinRequest', token: state.auth?.token, id: ev.id, message: $('#joinMsg').value });
+    hideLoading(); toast('参加リクエストを送りました！');
+    ev.request_count++;
+    openDetail(ev.id);
+  } catch (err) {
+    hideLoading(); toast(err.message, 4000);
+    if (err.data?.code === 'AUTH') requireAuth('もう一度ログインしてください。', () => openDetail(ev.id));
+  }
+}
+
+async function deleteEvent(ev) {
+  if (!confirm('この投稿を今すぐ終了して地図から消しますか？')) return;
+  showLoading(['投稿を終了しています...']);
+  try {
+    await apiPost({ action: 'deleteEvent', token: state.auth?.token, id: ev.id });
+    hideLoading(); closeSheets(); toast('投稿を終了しました');
+    state.events = state.events.filter(x => x.id !== ev.id);
+    renderMarkers();
+  } catch (err) { hideLoading(); toast(err.message, 4000); }
+}
+
+/* ---------- 認証 ---------- */
+function renderUser() {
+  $('#userLabel').textContent = state.auth?.user ? state.auth.user.nickname + 'さん' : 'ニックネーム登録';
+}
+function setAuthMode(mode) {
+  state.authMode = mode;
+  $$('.auth-tab').forEach(t => t.setAttribute('aria-pressed', t.dataset.mode === mode));
+  $('#authSubmit').textContent = mode === 'register' ? '登録してはじめる' : 'ログインする';
+  $('#authPass').setAttribute('autocomplete', mode === 'register' ? 'new-password' : 'current-password');
+  $('#authError').textContent = '';
+}
+function requireAuth(reason, after) {
+  state.afterAuth = after || null;
+  $('#authReason').textContent = reason || '投稿や参加リクエストにはニックネーム登録が必要です。地図を見るだけなら登録はいりません。';
+  setAuthMode('register');
+  openSheet('sheetAuth');
+  setTimeout(() => $('#authNick').focus(), 300);
+}
+$$('.auth-tab').forEach(t => t.addEventListener('click', () => setAuthMode(t.dataset.mode)));
+$('#togglePass').addEventListener('click', () => {
+  const i = $('#authPass'); const show = i.type === 'password';
+  i.type = show ? 'text' : 'password';
+  $('#togglePass').innerHTML = show ? '<i class="fa-solid fa-eye-slash"></i>' : '<i class="fa-solid fa-eye"></i>';
+});
+$('#authSubmit').addEventListener('click', async () => {
+  const nickname = $('#authNick').value.trim(), password = $('#authPass').value;
+  if (nickname.length < 2) { $('#authError').textContent = 'ニックネームは2文字以上で入力してください'; return; }
+  if (password.length < 6) { $('#authError').textContent = 'パスワードは6文字以上で入力してください'; return; }
+  $('#authSubmit').disabled = true;
+  try {
+    const j = await apiPost({ action: state.authMode, nickname, password });
+    saveAuth({ token: j.token, user: j.user });
+    $('#authPass').value = '';
+    closeSheets();
+    toast(state.authMode === 'register' ? `ようこそ、${j.user.nickname}さん！` : `おかえりなさい、${j.user.nickname}さん`);
+    renderMarkers();
+    const f = state.afterAuth; state.afterAuth = null;
+    if (f) setTimeout(f, 300);
+  } catch (err) {
+    $('#authError').textContent = err.message;
+  } finally { $('#authSubmit').disabled = false; }
+});
+
+$('#btnUser').addEventListener('click', () => state.auth ? openMyPage() : requireAuth());
+
+async function openMyPage() {
+  $('#myTitle').textContent = state.auth.user.nickname + 'さん';
+  $('#myBody').innerHTML = '<p class="text-sm font-bold text-ink/60">読み込み中...</p>';
+  openSheet('sheetMy');
+  try {
+    const j = await apiPost({ action: 'getMyData', token: state.auth.token });
+    const evHtml = j.myEvents.length ? j.myEvents.map(ev => `
+      <div class="border-2 border-ink rounded-2xl p-3 mb-3">
+        <button class="my-ev w-full text-left flex items-center gap-2" data-id="${esc(ev.id)}">
+          <span class="text-2xl">${esc(ev.icon)}</span>
+          <span class="font-bold flex-1 truncate">${esc(ev.title)}</span>
+          <span class="text-xs font-bold text-ink/60 shrink-0">${remain(ev.expires_at).text}</span>
+        </button>
+        ${ev.requests.length ? `<ul class="mt-2 space-y-1.5">${ev.requests.map(q => `
+          <li class="text-sm bg-sky rounded-xl px-3 py-2"><span class="font-bold">${esc(q.nickname)}さん</span><span class="text-xs text-ink/50 ml-1">${ago(q.created_at)}</span><br>${esc(q.message)}</li>`).join('')}</ul>`
+          : '<p class="text-xs text-ink/60 mt-2">参加リクエストはまだありません</p>'}
+      </div>`).join('') : '<p class="text-sm text-ink/60 mb-3">公開中の投稿はありません。右下の「今ココ！」から投稿できます。</p>';
+    const sentHtml = j.sentRequests.length ? `<ul class="space-y-1.5">${j.sentRequests.map(s => `
+      <li class="flex items-center gap-2 text-sm"><span>${esc(s.icon)}</span><span class="flex-1 truncate ${s.active ? 'font-bold' : 'text-ink/50 line-through'}">${esc(s.title)}</span><span class="text-xs text-ink/50">${ago(s.created_at)}</span></li>`).join('')}</ul>`
+      : '<p class="text-sm text-ink/60">まだ送っていません</p>';
+    $('#myBody').innerHTML = `
+      <h3 class="font-display text-base mb-2">公開中の投稿と参加リクエスト</h3>${evHtml}
+      <h3 class="font-display text-base mt-5 mb-2">送った参加リクエスト</h3>${sentHtml}`;
+    $$('.my-ev').forEach(b => b.addEventListener('click', () => {
+      const ev = state.events.find(x => x.id === b.dataset.id);
+      if (ev) { state.map.flyTo([ev.lat, ev.lng], 16); openDetail(ev.id); }
+    }));
+  } catch (err) {
+    $('#myBody').innerHTML = `<p class="text-sm text-flare font-bold">${esc(err.message)}</p>`;
+    if (err.data?.code === 'AUTH') { closeSheets(); requireAuth('もう一度ログインしてください。'); }
+  }
+}
+$('#btnLogout').addEventListener('click', async () => {
+  const token = state.auth?.token;
+  saveAuth(null); closeSheets(); renderMarkers(); toast('ログアウトしました');
+  try { await apiPost({ action: 'logout', token }); } catch (_) {}
+});
+
+/* ---------- 投稿フロー ---------- */
+function newDraft(latlng) {
+  return {
+    latlng: latlng || null, category: null, media: null,
+    exp: '3h', capacity: 'あと2人', fee: '割り勘', ages: ['誰でも'], gender: '',
+  };
+}
+function startPostAt(latlng) {
+  if (state.picking) { setPickedLocation(latlng); return; }
+  if (!state.auth) return requireAuth('投稿するにはニックネーム登録が必要です。', () => startPostAt(latlng));
+  openPost(latlng);
+}
+function openPost(latlng) {
+  if (!state.draft) {
+    state.draft = newDraft(latlng);
+    resetPostForm();
+  } else if (latlng) state.draft.latlng = latlng;
+  if (state.draft.latlng) showPickMarker(state.draft.latlng);
+  goStep(state.draft.latlng && state.draft.category ? state.step : 1);
+  openSheet('sheetPost');
+}
+function resetPostForm() {
+  ['#pTitle', '#pDesc', '#capFree', '#feeFree', '#condFree', '#expCustom'].forEach(s => $(s).value = '');
+  $('#pTitleCount').textContent = '0'; $('#pDescCount').textContent = '0';
+  $('#mediaPreview').innerHTML = ''; $('#mediaPreview').classList.add('hidden');
+  $('#expCustom').classList.add('hidden');
+  renderCatGrid(); syncChips();
+}
+function renderCatGrid() {
+  $('#catGrid').innerHTML = CATS.map(c =>
+    `<button class="cat-btn sticker bg-white rounded-2xl py-2 flex flex-col items-center gap-0.5" data-cat="${c.id}" aria-pressed="${state.draft?.category === c.id}">
+      <span class="text-2xl">${c.icon}</span><span class="text-[11px] font-bold leading-tight">${esc(c.label)}</span></button>`).join('');
+  $$('#catGrid .cat-btn').forEach(b => b.addEventListener('click', () => {
+    state.draft.category = b.dataset.cat;
+    $$('#catGrid .cat-btn').forEach(x => x.setAttribute('aria-pressed', x === b));
+    updateNav();
+  }));
+}
+function syncChips() {
+  const d = state.draft;
+  $$('#expireChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.exp === d.exp));
+  $$('#capChips .chip').forEach(c => c.setAttribute('aria-pressed', !$('#capFree').value && c.dataset.v === d.capacity));
+  $$('#feeChips .chip').forEach(c => c.setAttribute('aria-pressed', !$('#feeFree').value && c.dataset.v === d.fee));
+  $$('#ageChips .chip').forEach(c => c.setAttribute('aria-pressed', d.ages.includes(c.dataset.v)));
+  $$('#genderChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.v === d.gender));
+  $('#expPreview').textContent = expiresAt() ? `${fmtTime(expiresAt())} に地図から消えます` : '日時を選んでください';
+}
+function expiresAt() {
+  const now = new Date(), d = state.draft;
+  if (d.exp === '1h') return new Date(now.getTime() + 3600000);
+  if (d.exp === '3h') return new Date(now.getTime() + 3 * 3600000);
+  if (d.exp === 'today') {
+    const t = new Date(now); t.setHours(23, 59, 0, 0);
+    return t.getTime() - now.getTime() < 10 * 60000 ? null : t;
+  }
+  const v = $('#expCustom').value; if (!v) return null;
+  const t = new Date(v); return isNaN(t) ? null : t;
+}
+function toLocalInput(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+
+$('#expireChips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  state.draft.exp = b.dataset.exp;
+  const custom = b.dataset.exp === 'custom';
+  $('#expCustom').classList.toggle('hidden', !custom);
+  if (custom) {
+    const now = new Date();
+    $('#expCustom').min = toLocalInput(new Date(now.getTime() + 10 * 60000));
+    $('#expCustom').max = toLocalInput(new Date(now.getTime() + 72 * 3600000));
+    if (!$('#expCustom').value) $('#expCustom').value = toLocalInput(new Date(now.getTime() + 5 * 3600000));
+  }
+  syncChips(); updateNav();
+});
+$('#expCustom').addEventListener('change', () => { syncChips(); updateNav(); });
+$('#capChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.draft.capacity = b.dataset.v; $('#capFree').value = ''; syncChips(); });
+$('#feeChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.draft.fee = b.dataset.v; $('#feeFree').value = ''; syncChips(); });
+$('#capFree').addEventListener('input', syncChips);
+$('#feeFree').addEventListener('input', syncChips);
+$('#ageChips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  const v = b.dataset.v, d = state.draft;
+  if (v === '誰でも') d.ages = ['誰でも'];
+  else {
+    d.ages = d.ages.filter(x => x !== '誰でも');
+    d.ages = d.ages.includes(v) ? d.ages.filter(x => x !== v) : [...d.ages, v];
+    if (!d.ages.length) d.ages = ['誰でも'];
+  }
+  syncChips();
+});
+$('#genderChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.draft.gender = b.dataset.v; syncChips(); });
+$('#pTitle').addEventListener('input', e => { $('#pTitleCount').textContent = e.target.value.length; updateNav(); });
+$('#pDesc').addEventListener('input', e => { $('#pDescCount').textContent = e.target.value.length; });
+
+/* 場所 */
+function showPickMarker(ll) {
+  const icon = L.divIcon({ className: '', html: '<div class="pick-pin">📍</div>', iconSize: [40, 44], iconAnchor: [20, 42] });
+  if (state.pickMarker) state.pickMarker.setLatLng(ll).setIcon(icon);
+  else state.pickMarker = L.marker(ll, { icon, interactive: false, zIndexOffset: 1000 }).addTo(state.map);
+  $('#locText').innerHTML = `<i class="fa-solid fa-location-dot text-flare mr-1"></i>${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
+}
+function clearPickMarker() { if (state.pickMarker) { state.pickMarker.remove(); state.pickMarker = null; } }
+function setPickedLocation(ll) {
+  state.picking = false;
+  $('#pickBanner').classList.add('hidden');
+  state.draft.latlng = ll;
+  showPickMarker(ll);
+  openSheet('sheetPost'); updateNav();
+}
+$('#pickOnMap').addEventListener('click', () => {
+  state.picking = true;
+  $$('.sheet.open').forEach(s => s.classList.remove('open'));
+  $('#backdrop').classList.remove('open');
+  $('#pickBanner').classList.remove('hidden');
+});
+$('#pickCancel').addEventListener('click', () => { state.picking = false; $('#pickBanner').classList.add('hidden'); openSheet('sheetPost'); });
+$('#useGps').addEventListener('click', async () => {
+  const ll = await locate(true);
+  if (ll) { state.draft.latlng = ll; showPickMarker(ll); updateNav(); }
+});
+
+/* メディア */
+function compressImage(file, maxSize = 1280, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const w = Math.round(img.width * s), h = Math.round(img.height * s);
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      const dataUrl = cv.toDataURL('image/jpeg', quality);
+      URL.revokeObjectURL(url);
+      resolve({ data: dataUrl.split(',')[1], mimeType: 'image/jpeg', preview: dataUrl, kind: 'image' });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('この画像は読み込めません（JPEG/PNGで撮り直してください）')); };
+    img.src = url;
+  });
+}
+function readVideo(file) {
+  return new Promise((resolve, reject) => {
+    if (file.size > MAX_VIDEO_BYTES) return reject(new Error('動画は15MBまでです。短く撮り直してください'));
+    let mime = (file.type || '').toLowerCase();
+    if (!mime && /\.mov$/i.test(file.name)) mime = 'video/quicktime';
+    if (!/^video\/(mp4|webm|quicktime)$/.test(mime)) return reject(new Error('MP4 / WebM / MOV の動画を選んでください'));
+    const r = new FileReader();
+    r.onload = () => resolve({ data: String(r.result).split(',')[1], mimeType: mime, preview: URL.createObjectURL(file), kind: 'video' });
+    r.onerror = () => reject(new Error('動画を読み込めませんでした'));
+    r.readAsDataURL(file);
+  });
+}
+async function onFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const m = file.type.startsWith('video/') || /\.(mov|mp4|webm)$/i.test(file.name) ? await readVideo(file) : await compressImage(file);
+    state.draft.media = m;
+    const box = $('#mediaPreview');
+    box.innerHTML = (m.kind === 'image'
+      ? `<img src="${m.preview}" class="w-full max-h-64 object-contain" alt="プレビュー">`
+      : `<video src="${m.preview}" class="w-full max-h-64" controls playsinline muted></video>`)
+      + `<button id="mediaRemove" class="absolute top-2 right-2 sticker bg-white rounded-full w-9 h-9" aria-label="写真・動画を外す"><i class="fa-solid fa-xmark"></i></button>`;
+    box.classList.remove('hidden');
+    $('#mediaRemove').addEventListener('click', () => { state.draft.media = null; box.innerHTML = ''; box.classList.add('hidden'); });
+  } catch (err) { toast(err.message, 4000); }
+}
+$('#fileCamera').addEventListener('change', onFile);
+$('#fileLibrary').addEventListener('change', onFile);
+
+/* ステップ */
+const STEP_LABELS = { 1: '1／3　場所となにしてるか', 2: '2／3　内容と写真', 3: '3／3　表示時間と募集' };
+function goStep(n) {
+  state.step = n;
+  $$('#sheetPost .step').forEach(s => s.classList.toggle('hidden', Number(s.dataset.step) !== n));
+  $$('#sheetPost .step-bar').forEach((b, i) => { b.style.background = i < n ? 'var(--flare)' : '#fff'; });
+  $('#stepLabel').textContent = STEP_LABELS[n];
+  $('#stepBack').classList.toggle('hidden', n === 1);
+  $('#stepNext').textContent = n === 3 ? '投稿する' : '次へ';
+  $('#sheetPost .sheet-body').scrollTop = 0;
+  if (n === 3) syncChips();
+  updateNav();
+}
+function stepValid(n) {
+  const d = state.draft;
+  if (n === 1) return !!(d.latlng && d.category);
+  if (n === 2) return $('#pTitle').value.trim().length > 0;
+  if (n === 3) return !!expiresAt() && expiresAt().getTime() > Date.now() + 5 * 60000;
+  return true;
+}
+function updateNav() { if (state.draft) $('#stepNext').disabled = !stepValid(state.step); }
+$('#stepBack').addEventListener('click', () => goStep(Math.max(1, state.step - 1)));
+$('#stepNext').addEventListener('click', () => {
+  if (!stepValid(state.step)) return;
+  if (state.step < 3) goStep(state.step + 1); else submitPost();
+});
+
+async function submitPost() {
+  const d = state.draft;
+  const exp = expiresAt();
+  const conds = [d.ages.includes('誰でも') ? '誰でも歓迎' : d.ages.join('・') + '歓迎', d.gender, $('#condFree').value.trim()].filter(Boolean).join('／');
+  const body = {
+    action: 'createEvent', token: state.auth?.token,
+    title: $('#pTitle').value.trim(), description: $('#pDesc').value.trim(),
+    category: d.category, lat: d.latlng.lat, lng: d.latlng.lng,
+    expires_at: exp.toISOString(),
+    capacity: $('#capFree').value.trim() || d.capacity,
+    fee: $('#feeFree').value.trim() || d.fee,
+    conditions: conds,
+    media: d.media ? { data: d.media.data, mimeType: d.media.mimeType } : null,
+  };
+  const msgs = ['Geminiが投稿をチェック中...', 'キャッチコピーを考えています...'];
+  if (d.media) msgs.push(d.media.kind === 'video' ? '動画をアップロード中...' : '写真をアップロード中...');
+  msgs.push('地図にピンを立てています...');
+  showLoading(msgs);
+  try {
+    const j = await apiPost(body);
+    hideLoading();
+    state.draft = null; clearPickMarker(); closeSheets();
+    state.events = [j.event, ...state.events.filter(x => x.id !== j.event.id)];
+    state.filter = 'all'; renderFilters(); renderMarkers();
+    state.map.flyTo([j.event.lat, j.event.lng], 16, { duration: .8 });
+    burst(innerWidth / 2, innerHeight / 2);
+    toast('投稿しました！地図に載りました');
+    setTimeout(() => openDetail(j.event.id), 900);
+  } catch (err) {
+    hideLoading();
+    if (err.data?.code === 'AUTH') { requireAuth('もう一度ログインしてから投稿してください。', () => openPost()); return; }
+    toast(err.message, 5000);
+  }
+}
+
+$('#btnPost').addEventListener('click', async () => {
+  if (!state.auth) return requireAuth('投稿するにはニックネーム登録が必要です。', () => $('#btnPost').click());
+  const start = !state.draft;
+  openPost(null);
+  if (start && !state.draft.latlng) {
+    const ll = state.meLatLng || await locate(true);
+    if (ll && state.draft) { state.draft.latlng = ll; showPickMarker(ll); updateNav(); }
+  }
+});
+$('#btnLocate').addEventListener('click', () => locate(true));
+$('#btnRefresh').addEventListener('click', async () => {
+  const i = $('#btnRefresh i'); i.classList.add('fa-spin');
+  await loadEvents(); i.classList.remove('fa-spin'); toast('最新の状態にしました', 1500);
+});
+
+/* ---------- 起動 ---------- */
+(async function boot() {
+  initMap();
+  renderFilters();
+  renderUser();
+  if (GAS_API_URL.includes('XXXX')) { toast('index.html の GAS_API_URL を設定してください', 6000); $('#countBadge').textContent = 'API未設定'; return; }
+  locate(false).then(ll => { if (ll && !new URLSearchParams(location.search).get('e')) state.map.setView(ll, 14); });
+  await loadEvents();
+  const eid = new URLSearchParams(location.search).get('e');
+  if (eid) {
+    const ev = state.events.find(x => x.id === eid);
+    if (ev) { state.map.setView([ev.lat, ev.lng], 16); openDetail(eid); }
+    else { toast('この募集はもう終了しています'); history.replaceState(null, '', location.pathname); }
+  }
+  if (state.auth) apiPost({ action: 'me', token: state.auth.token }).catch(() => {});
+  setInterval(() => { if (!document.hidden) loadEvents(true); }, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadEvents(true); });
+})();
+</script>
+</body>
+</html>
