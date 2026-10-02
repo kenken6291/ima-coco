@@ -60,6 +60,10 @@ const CATEGORIES = {
   campingcar: { label: 'キャンピングカー', icon: '🚐' },
   cafe: { label: 'カフェ', icon: '☕' },
   sports: { label: 'スポーツ', icon: '⚽' },
+  goukon: { label: '合コン', icon: '💘' },
+  nomikai: { label: '飲み会', icon: '🍻' },
+  dance: { label: 'ダンス', icon: '💃' },
+  offkai: { label: 'オフ会', icon: '🙌' },
   other: { label: 'その他', icon: '📍' },
 };
 
