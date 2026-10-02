@@ -56,7 +56,10 @@
   .coco-pin-body { position: absolute; left: 4px; top: 0; width: 44px; height: 44px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); background: var(--c); border: 3px solid #fff; box-shadow: 0 0 0 2px var(--ink), 2px 4px 0 2px rgba(36,30,78,.35); }
   .coco-pin-emoji { position: absolute; left: 4px; top: 0; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 22px; line-height: 1; }
   .coco-pin-shadow { position: absolute; left: 17px; bottom: 2px; width: 18px; height: 6px; border-radius: 50%; background: rgba(36,30,78,.3); }
-  .coco-pin-badge { position: absolute; right: -4px; top: -6px; background: var(--sun); color: var(--ink); border: 2px solid var(--ink); font-size: 9px; font-weight: 800; padding: 0 4px; border-radius: 8px; line-height: 14px; }
+  .coco-pin-badge { position: absolute; right: -6px; top: -6px; background: var(--sun); color: var(--ink); border: 2px solid var(--ink); font-size: 9px; font-weight: 800; padding: 0 4px; border-radius: 8px; line-height: 14px; }
+  .coco-pin-badge.live { background: var(--flare); color: #fff; }
+  .coco-pin-count { position: absolute; left: -8px; top: -6px; background: #fff; color: var(--ink); border: 2px solid var(--ink); font-size: 10px; font-weight: 800; padding: 0 4px; border-radius: 8px; line-height: 14px; white-space: nowrap; }
+  .coco-pin.future .coco-pin-body { opacity: .82; }
   .coco-pin.soon .coco-pin-body { animation: soon 1.1s ease-in-out infinite; }
   .coco-pin.mine .coco-pin-body { border-color: var(--sun); }
   @keyframes pin-drop { 0% { transform: translateY(-70px) scale(.5); opacity: 0; } 100% { transform: none; opacity: 1; } }
@@ -85,11 +88,14 @@
 
   .field { width: 100%; border: 2px solid var(--ink); border-radius: 14px; padding: 10px 12px; font-size: 16px; background: #fff; }
   .field:focus { outline: none; box-shadow: 0 0 0 3px rgba(255,61,104,.35); }
+  .field-sm { padding: 7px 10px; font-size: 15px; border-radius: 10px; }
   .label { font-weight: 800; font-size: 14px; margin-bottom: 6px; display: block; }
   .pw-wrap { position: relative; }
   .pw-wrap .field { padding-right: 48px; }
   .pw-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 10px; }
-  .auth-err, .set-err { color: var(--flare); font-size: 14px; font-weight: 700; min-height: 1.25rem; }
+  .auth-err, .set-err, .form-err { color: var(--flare); font-size: 14px; font-weight: 700; min-height: 1.25rem; }
+  .sns-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .sns-row i { width: 22px; text-align: center; font-size: 18px; }
 
   .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 110px); transform: translate(-50%, 20px); opacity: 0; z-index: 2000; transition: all .25s; pointer-events: none; max-width: 90vw; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -124,7 +130,7 @@
 </header>
 
 <!-- 件数・ピック案内 -->
-<div id="countBadge" class="fixed z-[500] left-3 bg-white sticker rounded-full px-3 py-1 text-xs font-bold" style="top:calc(max(env(safe-area-inset-top),10px) + 104px)">読み込み中…</div>
+<button id="countBadge" class="fixed z-[500] left-3 bg-white sticker rounded-full px-3 py-1 text-xs font-bold" style="top:calc(max(env(safe-area-inset-top),10px) + 104px)">読み込み中…</button>
 <div id="pickBanner" class="hidden fixed z-[600] inset-x-3 bg-sun sticker rounded-2xl px-4 py-3 text-sm font-bold flex items-center justify-between gap-2" style="top:calc(max(env(safe-area-inset-top),10px) + 104px)">
   <span><i class="fa-solid fa-hand-pointer mr-1"></i>地図をタップして場所を決めてください</span>
   <button id="pickCancel" class="underline shrink-0">やめる</button>
@@ -133,6 +139,7 @@
 <!-- 右下ボタン -->
 <div class="fixed z-[500] right-3 flex flex-col items-end gap-3" style="bottom:calc(env(safe-area-inset-bottom) + 20px)">
   <button id="btnRefresh" class="sticker bg-white w-12 h-12 rounded-full text-lg" aria-label="再読み込み"><i class="fa-solid fa-rotate"></i></button>
+  <button id="btnList" class="sticker bg-white w-12 h-12 rounded-full text-lg" aria-label="エリアで一覧"><i class="fa-solid fa-list-ul"></i></button>
   <button id="btnLocate" class="sticker bg-white w-12 h-12 rounded-full text-lg" aria-label="現在地へ移動"><i class="fa-solid fa-location-crosshairs"></i></button>
   <button id="btnPost" class="sticker bg-flare text-white rounded-full h-16 pl-5 pr-6 font-display text-lg flex items-center gap-2">
     <i class="fa-solid fa-plus text-xl"></i>今ココ！
@@ -146,6 +153,25 @@
 <section id="sheetDetail" class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
   <div class="sheet-grab"></div>
   <div class="sheet-body pb-safe" id="detailBody"></div>
+</section>
+
+<!-- エリア一覧シート -->
+<section id="sheetList" class="sheet" role="dialog" aria-modal="true" aria-labelledby="listTitle">
+  <div class="sheet-grab"></div>
+  <div class="px-5">
+    <div class="flex items-center justify-between">
+      <h2 id="listTitle" class="font-display text-xl">エリアで探す</h2>
+      <button class="close-sheet w-10 h-10 text-xl" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+  </div>
+  <div id="areaChips" class="flex gap-2 overflow-x-auto no-scrollbar px-5 pb-2 pt-1" aria-label="エリア"></div>
+  <div id="listCatChips" class="flex gap-2 overflow-x-auto no-scrollbar px-5 pb-2" aria-label="種別"></div>
+  <div id="sortChips" class="flex gap-2 overflow-x-auto no-scrollbar px-5 pb-3" aria-label="並び順">
+    <button class="chip" data-sort="soon">開催が近い順</button>
+    <button class="chip" data-sort="new">新着順</button>
+    <button class="chip" data-sort="people">参加者が多い順</button>
+  </div>
+  <div id="listBody" class="sheet-body px-5 pb-safe border-t-2 border-ink/10 pt-3"></div>
 </section>
 
 <!-- 会員シート（ログイン／新規登録／パスワード忘れ／パスワード更新） -->
@@ -186,6 +212,7 @@
       <div class="bg-sky border-2 border-ink rounded-2xl p-3 text-xs leading-relaxed mb-3">
         <p class="font-bold text-sm mb-1">利用上の注意</p>
         <p>・投稿した場所は誰でも見られます。自宅など個人が特定される場所は投稿しないでください。</p>
+        <p>・参加表明すると、ニックネームとメッセージが主催者と他の参加者に表示されます。</p>
         <p>・初対面の人と会うときは人目のある場所で。トラブルは当事者同士で解決してください。</p>
         <p>・投稿はAIが自動チェックしますが、内容の正確さや安全は保証されません。</p>
         <p>・不適切な投稿は予告なく削除することがあります。</p>
@@ -255,29 +282,37 @@
       <div class="step-bar h-2 flex-1 rounded-full border-2 border-ink"></div>
       <div class="step-bar h-2 flex-1 rounded-full border-2 border-ink"></div>
       <div class="step-bar h-2 flex-1 rounded-full border-2 border-ink"></div>
+      <div class="step-bar h-2 flex-1 rounded-full border-2 border-ink"></div>
     </div>
     <p id="stepLabel" class="text-xs font-bold mt-1 text-ink/70"></p>
   </div>
 
   <div class="sheet-body px-5 pt-3">
-    <!-- STEP 1 -->
+    <!-- STEP 1 場所・種別 -->
     <div class="step" data-step="1">
-      <span class="label">場所</span>
-      <div class="flex items-center gap-2 mb-1">
-        <div id="locText" class="flex-1 text-sm font-bold bg-sky rounded-xl px-3 py-2.5 border-2 border-ink truncate">未設定</div>
+      <label class="label" for="placeQ">場所を探す</label>
+      <div class="flex gap-2 mb-1">
+        <input id="placeQ" class="field" maxlength="100" placeholder="住所・地名 または 35.6812, 139.7671" enterkeyhint="search">
+        <button id="placeSearch" class="sticker bg-ink text-white rounded-xl px-4 font-bold shrink-0" aria-label="検索"><i class="fa-solid fa-magnifying-glass"></i></button>
       </div>
-      <div class="grid grid-cols-2 gap-2 mb-5">
+      <p class="text-[11px] text-ink/60 mb-2">住所でも、緯度・経度（カンマ区切り）でも探せます</p>
+      <div id="placeResults" class="mb-2"></div>
+      <div class="grid grid-cols-2 gap-2 mb-3">
         <button id="useGps" class="sticker bg-white rounded-xl py-2.5 text-sm font-bold"><i class="fa-solid fa-location-crosshairs mr-1"></i>現在地を使う</button>
         <button id="pickOnMap" class="sticker bg-white rounded-xl py-2.5 text-sm font-bold"><i class="fa-solid fa-map-pin mr-1"></i>地図で選ぶ</button>
       </div>
-      <span class="label">なにしてる？</span>
+      <div id="locText" class="text-sm font-bold bg-sky rounded-xl px-3 py-2.5 border-2 border-ink truncate mb-3">📍 位置：未設定</div>
+      <label class="label" for="pAddress">表示する住所・場所名（任意）</label>
+      <input id="pAddress" class="field mb-1" maxlength="100" placeholder="例：二子玉川河川敷 ／ 空欄なら自動で入ります">
+      <p class="text-[11px] text-ink/60 mb-5">空欄の場合は都道府県と町名を自動で表示します</p>
+      <span class="label">種別</span>
       <div id="catGrid" class="grid grid-cols-4 gap-2 mb-4"></div>
     </div>
 
-    <!-- STEP 2 -->
+    <!-- STEP 2 内容 -->
     <div class="step hidden" data-step="2">
       <label class="label" for="pTitle">タイトル</label>
-      <input id="pTitle" class="field mb-1" maxlength="40" placeholder="例：多摩川の河原でBBQ中！">
+      <input id="pTitle" class="field mb-1" maxlength="40" placeholder="例：多摩川の河原でBBQ！">
       <p class="text-right text-xs text-ink/50 mb-3"><span id="pTitleCount">0</span>/40</p>
       <label class="label" for="pDesc">ひとこと</label>
       <textarea id="pDesc" class="field mb-1" rows="4" maxlength="500" placeholder="どんな感じ？目印は？持ち物は？"></textarea>
@@ -297,19 +332,39 @@
       <p class="text-xs text-ink/60 mb-4">動画は15MBまで。写真は自動で軽くしてから送ります。</p>
     </div>
 
-    <!-- STEP 3 -->
+    <!-- STEP 3 開催日時・表示期限 -->
     <div class="step hidden" data-step="3">
-      <span class="label">いつまで表示する？</span>
+      <span class="label">開催日時</span>
+      <div class="flex flex-wrap gap-2 mb-3">
+        <button class="chip" id="startNow">今から</button>
+      </div>
+      <label class="text-xs font-bold text-ink/70" for="startAt">開始</label>
+      <input id="startAt" type="datetime-local" class="field mb-3">
+      <label class="text-xs font-bold text-ink/70" for="endAt">終了</label>
+      <input id="endAt" type="datetime-local" class="field mb-2">
+      <div id="durChips" class="flex flex-wrap gap-2 mb-5">
+        <button class="chip" data-h="1">開始から1時間</button>
+        <button class="chip" data-h="2">2時間</button>
+        <button class="chip" data-h="3">3時間</button>
+        <button class="chip" data-h="5">5時間</button>
+      </div>
+
+      <span class="label">地図に表示する期限</span>
       <div id="expireChips" class="flex flex-wrap gap-2 mb-2">
         <button class="chip hidden" data-exp="keep" id="expKeep">そのまま</button>
+        <button class="chip" data-exp="end">開催終了まで</button>
         <button class="chip" data-exp="1h">1時間後</button>
         <button class="chip" data-exp="3h">3時間後</button>
         <button class="chip" data-exp="today">本日中（23:59）</button>
         <button class="chip" data-exp="custom">日時を指定</button>
       </div>
       <input id="expCustom" type="datetime-local" class="field hidden mb-2">
-      <p id="expPreview" class="text-xs font-bold text-ink/70 mb-5"></p>
+      <p id="expPreview" class="text-xs font-bold text-ink/70 mb-1"></p>
+      <p id="timeErr" class="form-err mb-4"></p>
+    </div>
 
+    <!-- STEP 4 募集・連絡先 -->
+    <div class="step hidden" data-step="4">
       <span class="label">募集人数</span>
       <div id="capChips" class="flex flex-wrap gap-2 mb-2">
         <button class="chip" data-v="あと1人">あと1人</button>
@@ -347,8 +402,16 @@
         <button class="chip" data-v="男性のみ">男性のみ</button>
       </div>
       <label class="label" for="condFree">そのほかの条件</label>
-      <input id="condFree" class="field mb-2" maxlength="40" placeholder="例：道具不要、初心者歓迎">
-      <p class="text-xs text-ink/60 mb-4">投稿はGeminiが内容をチェックしてから地図に載ります。</p>
+      <input id="condFree" class="field mb-5" maxlength="40" placeholder="例：道具不要、初心者歓迎">
+
+      <span class="label">連絡先SNS（任意）</span>
+      <p class="text-xs text-ink/60 mb-2">入れたSNSに、見た人が直接連絡できます。公開されるので注意してください。</p>
+      <div class="sns-row"><i class="fa-brands fa-x-twitter"></i><input id="snsX" class="field field-sm" maxlength="200" placeholder="XのユーザーID（@なし可）"></div>
+      <div class="sns-row"><i class="fa-brands fa-instagram"></i><input id="snsIg" class="field field-sm" maxlength="200" placeholder="InstagramのユーザーID"></div>
+      <div class="sns-row"><i class="fa-brands fa-line"></i><input id="snsLine" class="field field-sm" maxlength="200" placeholder="LINEのURL（https://line.me/…）" inputmode="url"></div>
+      <div class="sns-row"><i class="fa-brands fa-facebook"></i><input id="snsFb" class="field field-sm" maxlength="200" placeholder="FacebookのURL" inputmode="url"></div>
+      <div class="sns-row"><i class="fa-solid fa-link"></i><input id="snsOther" class="field field-sm" maxlength="200" placeholder="その他のURL（https://…）" inputmode="url"></div>
+      <p class="text-xs text-ink/60 mt-3 mb-4">投稿はGeminiが内容をチェックしてから地図に載ります。</p>
     </div>
   </div>
 
@@ -411,7 +474,7 @@
 
 <script>
 /* =========================================================
- * 設定：GASのウェブアプリURLに書き換えてください
+ * 設定：GASのウェブアプリURL
  * ========================================================= */
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxxQSPk7DVxkqxCOg-7ptiq7kYNumIdaHkaRwnPsbxf7Tv8diDNPvlFXrtepWp2gKb5qw/exec';
 
@@ -429,13 +492,20 @@ const CATS = [
   { id: 'other',      label: 'その他',     icon: '📍', color: '#7A7896' },
 ];
 const CAT = Object.fromEntries(CATS.map(c => [c.id, c]));
+const AREAS = ['北海道', '東北', '関東', '中部', '近畿', '中国', '四国', '九州・沖縄', 'その他'];
+const SNS_ICONS = { x: 'fa-brands fa-x-twitter', instagram: 'fa-brands fa-instagram', line: 'fa-brands fa-line', facebook: 'fa-brands fa-facebook', other: 'fa-solid fa-link' };
 const LS_KEY = 'imacoco_auth_v2';
+const LS_SNS = 'imacoco_sns_v1';
 const MAX_VIDEO_BYTES = 15 * 1024 * 1024;
+const MAX_PEOPLE = 20;
+const DAY = 86400000;
 
 const state = {
   map: null, events: [], markers: new Map(), filter: 'all',
+  area: 'all', listSort: 'soon',
   auth: loadAuth(), meLatLng: null, meMarker: null,
   picking: false, pickMarker: null, openEventId: null, tick: null,
+  partData: null,
   authView: 'login', afterAuth: null,
   step: 1,
   draft: null,
@@ -450,24 +520,45 @@ function saveAuth(a) { state.auth = a; try { a ? localStorage.setItem(LS_KEY, JS
 function isMember() { return !!(state.auth && state.auth.token && !state.auth.mustChange); }
 function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms); }
 function pad(n) { return String(n).padStart(2, '0'); }
+const WD = ['日', '月', '火', '水', '木', '金', '土'];
 function fmtTime(d) { return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function fmtDT(d) { return `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]}) ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function fmtRange(s, e) {
+  const a = new Date(s), b = new Date(e);
+  return a.toDateString() === b.toDateString() ? `${fmtDT(a)}〜${pad(b.getHours())}:${pad(b.getMinutes())}` : `${fmtDT(a)} 〜 ${fmtDT(b)}`;
+}
+function evStart(ev) { return ev.start_at || ev.created_at; }
+function evEnd(ev) { return ev.end_at || ev.expires_at; }
+function evStatus(ev) {
+  const now = Date.now(), s = new Date(evStart(ev)).getTime(), e = new Date(evEnd(ev)).getTime();
+  if (now >= e) return { key: 'ended', text: '開催終了', cls: 'bg-ink/10 text-ink/60' };
+  if (now >= s) return { key: 'live', text: '開催中', cls: 'bg-flare text-white' };
+  const m = Math.ceil((s - now) / 60000);
+  const t = m < 60 ? `あと${m}分で開始` : m < 1440 ? `あと${Math.floor(m / 60)}時間で開始` : `${Math.floor(m / 1440)}日後に開始`;
+  return { key: 'future', text: t, cls: 'bg-mint text-ink' };
+}
 function remain(iso) {
   const ms = new Date(iso).getTime() - Date.now();
   if (ms <= 0) return { text: '終了しました', ms };
-  const h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000), s = Math.floor(ms % 60000 / 1000);
-  return { text: h > 0 ? `あと${h}時間${pad(m)}分` : `あと${m}分${pad(s)}秒`, ms };
+  const d = Math.floor(ms / DAY), h = Math.floor(ms % DAY / 3600000), m = Math.floor(ms % 3600000 / 60000), s = Math.floor(ms % 60000 / 1000);
+  return { text: d > 0 ? `あと${d}日${h}時間` : h > 0 ? `あと${h}時間${pad(m)}分` : `あと${m}分${pad(s)}秒`, ms };
 }
 function ago(iso) {
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (m < 1) return 'たった今'; if (m < 60) return `${m}分前`;
   const h = Math.floor(m / 60); return h < 24 ? `${h}時間前` : `${Math.floor(h / 24)}日前`;
 }
+function placeText(ev) { return ev.address || ev.pref || '位置のみ'; }
 function validEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
 function checkNewPassword(pw, confirm) {
   if (pw.length < 8) return 'パスワードは8文字以上にしてください';
   if (!/[A-Za-z]/.test(pw) || !/\d/.test(pw)) return 'パスワードは英字と数字を両方含めてください';
   if (pw !== confirm) return '確認用のパスワードが一致しません';
   return '';
+}
+function peopleOptions(sel) {
+  let h = ''; for (let i = 1; i <= MAX_PEOPLE; i++) h += `<option value="${i}" ${i === Number(sel) ? 'selected' : ''}>${i}人</option>`;
+  return h;
 }
 
 /* ---------- API（GASのリダイレクト／CORS対応） ---------- */
@@ -487,14 +578,12 @@ async function apiGet(params) {
   return handleRes(await fetch(url, { method: 'GET', redirect: 'follow' }));
 }
 async function apiPost(body) {
-  // text/plain でプリフライトを回避
   return handleRes(await fetch(GAS_API_URL, {
     method: 'POST', redirect: 'follow',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(body),
   }));
 }
-/** 会員操作の共通エラー処理（ログイン切れ・パスワード未更新） */
 function handleAuthError(err, retry) {
   const code = err.data?.code;
   if (code === 'AUTH') { requireAuth('ログインの有効期限が切れました。もう一度ログインしてください。', retry); return true; }
@@ -515,7 +604,7 @@ function closeSheets() {
   clearInterval(state.tick);
   const v = $('#detailBody iframe'); if (v) v.src = 'about:blank';
   clearPickMarker();
-  $$('input[type="text"].pw-shown').forEach(i => { i.type = 'password'; i.classList.remove('pw-shown'); });
+  $$('input.pw-shown').forEach(i => { i.type = 'password'; i.classList.remove('pw-shown'); });
   $$('.pw-toggle').forEach(b => { b.innerHTML = '<i class="fa-solid fa-eye"></i>'; b.setAttribute('aria-label', 'パスワードを表示'); });
   if (location.search.includes('e=')) history.replaceState(null, '', location.pathname);
 }
@@ -561,7 +650,6 @@ function initMap() {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '&copy; OpenStreetMap contributors',
   }).addTo(state.map);
-
   state.map.on('contextmenu', e => startPostAt(e.latlng));
   state.map.on('click', e => { if (state.picking) setPickedLocation(e.latlng); });
 }
@@ -586,10 +674,12 @@ function locate(fly = true) {
 
 function pinIcon(ev, i) {
   const c = CAT[ev.category] || CAT.other;
+  const st = evStatus(ev);
   const r = new Date(ev.expires_at).getTime() - Date.now();
   const isNew = Date.now() - new Date(ev.created_at).getTime() < 15 * 60000;
   const mine = state.auth?.user?.user_id === ev.user_id;
-  const cls = ['coco-pin', r < 30 * 60000 ? 'soon' : '', mine ? 'mine' : ''].join(' ');
+  const cls = ['coco-pin', r < 30 * 60000 ? 'soon' : '', mine ? 'mine' : '', st.key === 'future' ? 'future' : ''].join(' ');
+  const badge = st.key === 'live' ? '<span class="coco-pin-badge live">LIVE</span>' : (isNew ? '<span class="coco-pin-badge">NEW</span>' : '');
   return L.divIcon({
     className: '',
     html: `<div class="${cls}" style="--c:${c.color};--d:${Math.min(i, 20) * 0.04}s">
@@ -597,25 +687,32 @@ function pinIcon(ev, i) {
              <div class="coco-pin-inner">
                <div class="coco-pin-body"></div>
                <div class="coco-pin-emoji">${esc(ev.icon || c.icon)}</div>
-               ${isNew ? '<span class="coco-pin-badge">NEW</span>' : ''}
+               ${badge}
+               ${ev.participant_count ? `<span class="coco-pin-count">👥${ev.participant_count}</span>` : ''}
              </div>
            </div>`,
     iconSize: [52, 62], iconAnchor: [26, 56],
   });
 }
 
+function filteredEvents() { return state.events.filter(ev => state.filter === 'all' || ev.category === state.filter); }
+
 function renderMarkers() {
   state.markers.forEach(m => m.remove());
   state.markers.clear();
-  const list = state.events.filter(ev => state.filter === 'all' || ev.category === state.filter);
+  const list = filteredEvents();
   list.forEach((ev, i) => {
     const m = L.marker([ev.lat, ev.lng], { icon: pinIcon(ev, i), title: ev.title, keyboard: true })
       .on('click', () => openDetail(ev.id))
       .addTo(state.map);
     state.markers.set(ev.id, m);
   });
-  const label = state.filter === 'all' ? '' : (CAT[state.filter]?.label + 'で ');
-  $('#countBadge').textContent = list.length ? `${label}いま ${list.length} 件が遊んでます` : `${label}いまは投稿がありません。一番乗りしよう！`;
+  const label = state.filter === 'all' ? '' : (CAT[state.filter]?.label + '：');
+  const live = list.filter(ev => evStatus(ev).key === 'live').length;
+  $('#countBadge').innerHTML = list.length
+    ? `<i class="fa-solid fa-list-ul mr-1"></i>${esc(label)}${list.length}件${live ? `（開催中 ${live}）` : ''}`
+    : `${esc(label)}いまは投稿がありません。一番乗りしよう！`;
+  if ($('#sheetList').classList.contains('open')) renderList();
 }
 
 async function loadEvents(silent) {
@@ -623,36 +720,86 @@ async function loadEvents(silent) {
     const j = await apiGet({ action: 'getEvents' });
     state.events = (j.events || []).filter(ev => isFinite(ev.lat) && isFinite(ev.lng));
     renderMarkers();
-    if (state.openEventId) {
-      const ev = state.events.find(x => x.id === state.openEventId);
-      if (!ev) { closeSheets(); toast('この募集は終了しました'); }
-    }
+    if (state.openEventId && !state.events.find(x => x.id === state.openEventId)) { closeSheets(); toast('このイベントは掲載が終了しました'); }
   } catch (err) {
     if (!silent) toast(err.message, 4000);
     $('#countBadge').textContent = '読み込みに失敗しました';
   }
 }
 
-/* ---------- フィルタ ---------- */
+/* ---------- 種別フィルタ ---------- */
+function setFilter(cat) {
+  state.filter = cat;
+  renderFilters();
+  renderMarkers();
+}
 function renderFilters() {
   const items = [{ id: 'all', label: 'すべて', icon: '✨' }, ...CATS];
   $('#filterBar').innerHTML = items.map(c =>
     `<button class="filter-btn sticker bg-white rounded-full px-3 py-1.5 text-sm font-bold whitespace-nowrap shrink-0" data-cat="${c.id}" aria-pressed="${c.id === state.filter}">
       <span class="mr-0.5">${c.icon}</span>${esc(c.label)}</button>`).join('');
-  $$('#filterBar .filter-btn').forEach(b => b.addEventListener('click', () => {
-    state.filter = b.dataset.cat;
-    $$('#filterBar .filter-btn').forEach(x => x.setAttribute('aria-pressed', x === b));
-    renderMarkers();
+  $$('#filterBar .filter-btn').forEach(b => b.addEventListener('click', () => setFilter(b.dataset.cat)));
+}
+
+/* ---------- エリア一覧 ---------- */
+function openList() { renderList(); openSheet('sheetList'); }
+function renderList() {
+  const byCat = filteredEvents();
+  const counts = {}; byCat.forEach(ev => { counts[ev.area || 'その他'] = (counts[ev.area || 'その他'] || 0) + 1; });
+  $('#areaChips').innerHTML = [['all', 'すべて', byCat.length], ...AREAS.filter(a => counts[a] || a === state.area).map(a => [a, a, counts[a] || 0])]
+    .map(([id, label, n]) => `<button class="chip shrink-0" data-area="${esc(id)}" aria-pressed="${state.area === id}">${esc(label)} <span class="opacity-70">${n}</span></button>`).join('');
+  $$('#areaChips .chip').forEach(b => b.addEventListener('click', () => { state.area = b.dataset.area; renderList(); fitArea(); }));
+
+  $('#listCatChips').innerHTML = [{ id: 'all', label: 'すべての種別', icon: '✨' }, ...CATS]
+    .map(c => `<button class="chip shrink-0" data-cat="${c.id}" aria-pressed="${state.filter === c.id}">${c.icon} ${esc(c.label)}</button>`).join('');
+  $$('#listCatChips .chip').forEach(b => b.addEventListener('click', () => setFilter(b.dataset.cat)));
+  $$('#sortChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.sort === state.listSort));
+
+  const list = byCat.filter(ev => state.area === 'all' || (ev.area || 'その他') === state.area);
+  const rank = ev => ({ live: 0, future: 1, ended: 2 }[evStatus(ev).key]);
+  list.sort((a, b) => {
+    if (state.listSort === 'new') return a.created_at < b.created_at ? 1 : -1;
+    if (state.listSort === 'people') return (b.participant_count || 0) - (a.participant_count || 0);
+    return rank(a) - rank(b) || (evStart(a) < evStart(b) ? -1 : 1);
+  });
+
+  $('#listBody').innerHTML = list.length ? list.map(ev => {
+    const c = CAT[ev.category] || CAT.other, st = evStatus(ev);
+    return `<button class="list-item w-full text-left flex gap-3 items-center border-2 border-ink rounded-2xl p-3 mb-2 bg-white" data-id="${esc(ev.id)}">
+      <div class="w-12 h-12 shrink-0 rounded-xl border-2 border-ink flex items-center justify-center text-2xl" style="background:${c.color}">${esc(ev.icon || c.icon)}</div>
+      <div class="min-w-0 flex-1">
+        <p class="font-bold truncate">${esc(ev.title)}</p>
+        <p class="text-xs text-ink/70 truncate"><i class="fa-regular fa-calendar mr-1"></i>${esc(fmtRange(evStart(ev), evEnd(ev)))}</p>
+        <p class="text-xs text-ink/60 truncate"><i class="fa-solid fa-location-dot mr-1"></i>${esc(placeText(ev))}　<i class="fa-solid fa-user-group mr-0.5"></i>${ev.participant_count || 0}人</p>
+      </div>
+      <span class="text-[11px] font-bold rounded-full px-2 py-0.5 shrink-0 ${st.cls}">${esc(st.text)}</span>
+    </button>`;
+  }).join('') : '<p class="text-sm text-ink/60 py-6 text-center">この条件のイベントはありません</p>';
+  $$('#listBody .list-item').forEach(b => b.addEventListener('click', () => {
+    const ev = state.events.find(x => x.id === b.dataset.id); if (!ev) return;
+    closeSheets(); state.map.flyTo([ev.lat, ev.lng], 15, { duration: .7 });
+    setTimeout(() => openDetail(ev.id), 500);
   }));
 }
+function fitArea() {
+  const list = filteredEvents().filter(ev => state.area === 'all' || (ev.area || 'その他') === state.area);
+  if (!list.length) return;
+  if (list.length === 1) state.map.setView([list[0].lat, list[0].lng], 14);
+  else state.map.fitBounds(L.latLngBounds(list.map(ev => [ev.lat, ev.lng])), { padding: [40, 40], maxZoom: 14 });
+}
+$('#sortChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.listSort = b.dataset.sort; renderList(); });
+$('#btnList').addEventListener('click', openList);
+$('#countBadge').addEventListener('click', openList);
 
 /* ---------- 詳細 ---------- */
 function openDetail(id) {
   const ev = state.events.find(x => x.id === id);
-  if (!ev) { toast('この募集は見つかりませんでした'); return; }
+  if (!ev) { toast('このイベントは見つかりませんでした'); return; }
+  if (state.openEventId !== id) state.partData = null;
   state.openEventId = id;
   const c = CAT[ev.category] || CAT.other;
   const mine = state.auth?.user?.user_id === ev.user_id;
+  const st = evStatus(ev);
 
   let media = '';
   if (ev.media_url && ev.media_type === 'image') {
@@ -660,6 +807,13 @@ function openDetail(id) {
   } else if (ev.media_url && ev.media_type === 'video') {
     media = `<div class="relative w-full bg-black" style="aspect-ratio:16/9"><iframe src="${esc(ev.media_url)}" class="absolute inset-0 w-full h-full" allow="autoplay; fullscreen" allowfullscreen title="${esc(ev.title)}の動画"></iframe></div>`;
   }
+  const sns = (ev.sns || []).filter(s => /^https:\/\//.test(s.url));
+  const snsHtml = sns.length ? `
+      <div class="mt-4">
+        <p class="label mb-2"><i class="fa-solid fa-comment-dots mr-1"></i>主催者に連絡</p>
+        <div class="flex flex-wrap gap-2">${sns.map(s => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" class="sticker bg-white rounded-full px-3 py-2 text-sm font-bold inline-flex items-center gap-1.5"><i class="${SNS_ICONS[s.type] || SNS_ICONS.other}"></i>${esc(s.label)}</a>`).join('')}</div>
+        <p class="text-[11px] text-ink/50 mt-1.5">各SNSのページが開きます。やりとりはSNS上で行われます。</p>
+      </div>` : '';
 
   $('#detailBody').innerHTML = `
     ${media ? `<div class="mx-4 mt-2 rounded-2xl overflow-hidden border-2 border-ink">${media}</div>` : ''}
@@ -674,26 +828,38 @@ function openDetail(id) {
       </div>
       ${ev.summary ? `<p class="inline-block mt-3 bg-sun border-2 border-ink rounded-xl px-3 py-1 font-bold">${esc(ev.summary)}</p>` : ''}
 
-      <div class="mt-4 flex items-center gap-2 bg-ink text-white rounded-2xl px-4 py-3">
-        <i class="fa-solid fa-hourglass-half text-sun"></i>
-        <span id="countdown" class="font-display text-lg">${remain(ev.expires_at).text}</span>
-        <span class="ml-auto text-xs opacity-80">${fmtTime(new Date(ev.expires_at))} まで</span>
+      <div class="mt-4 bg-ink text-white rounded-2xl px-4 py-3">
+        <div class="flex items-center gap-2">
+          <i class="fa-regular fa-calendar text-sun"></i>
+          <span class="font-display text-base leading-snug">${esc(fmtRange(evStart(ev), evEnd(ev)))}</span>
+          <span id="evStatus" class="ml-auto text-xs font-bold rounded-full px-2 py-0.5 shrink-0 ${st.cls}">${esc(st.text)}</span>
+        </div>
+        <p class="text-xs opacity-75 mt-1"><i class="fa-solid fa-hourglass-half mr-1"></i>地図の掲載：<span id="countdown">${remain(ev.expires_at).text}</span>（${fmtTime(new Date(ev.expires_at))}まで）</p>
+      </div>
+
+      <div class="mt-3 flex items-start gap-2 text-sm">
+        <i class="fa-solid fa-location-dot text-flare mt-1"></i>
+        <div class="min-w-0 flex-1">
+          <p class="font-bold break-words">${esc(placeText(ev))}</p>
+          <p class="text-xs text-ink/50">${ev.area && ev.area !== 'その他' ? esc(ev.area) + '　' : ''}${ev.lat.toFixed(5)}, ${ev.lng.toFixed(5)}</p>
+        </div>
+        <a class="text-xs font-bold underline shrink-0 mt-1" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${ev.lat},${ev.lng}"><i class="fa-solid fa-route mr-1"></i>道順</a>
       </div>
 
       <div class="grid grid-cols-3 gap-2 mt-3 text-center">
         <div class="border-2 border-ink rounded-xl py-2"><p class="text-[11px] font-bold text-ink/60">募集</p><p class="font-bold text-sm break-words px-1">${esc(ev.capacity)}</p></div>
         <div class="border-2 border-ink rounded-xl py-2"><p class="text-[11px] font-bold text-ink/60">参加費</p><p class="font-bold text-sm break-words px-1">${esc(ev.fee)}</p></div>
-        <div class="border-2 border-ink rounded-xl py-2"><p class="text-[11px] font-bold text-ink/60">参加希望</p><p class="font-bold text-sm">${ev.request_count}人</p></div>
+        <div class="border-2 border-ink rounded-xl py-2 bg-sun"><p class="text-[11px] font-bold text-ink/60">参加表明</p><p class="font-bold text-sm"><span class="part-count">${ev.participant_count || 0}</span>人</p></div>
       </div>
       ${ev.conditions ? `<p class="mt-3 text-sm"><i class="fa-solid fa-user-check mr-1 text-mint"></i><span class="font-bold">条件：</span>${esc(ev.conditions)}</p>` : ''}
       ${ev.description ? `<p class="mt-3 whitespace-pre-wrap break-words leading-relaxed">${esc(ev.description)}</p>` : ''}
       ${ev.hashtags?.length ? `<p class="mt-3 flex flex-wrap gap-1.5">${ev.hashtags.map(t => `<span class="text-xs font-bold bg-sky border border-ink/30 rounded-full px-2 py-0.5">${esc(t)}</span>`).join('')}</p>` : ''}
+      ${snsHtml}
 
-      <div id="joinBox" class="hidden mt-4">
-        <label class="label" for="joinMsg">ひとことメッセージ</label>
-        <textarea id="joinMsg" class="field" rows="2" maxlength="140" placeholder="例：あと10分で着きます！"></textarea>
-        <button id="joinSend" class="sticker bg-flare text-white w-full rounded-2xl py-3 mt-2 font-display">参加リクエストを送る</button>
-      </div>
+      <section class="mt-5 border-2 border-ink rounded-2xl p-4">
+        <h3 class="font-display text-base mb-3">参加表明 <span class="part-count">${ev.participant_count || 0}</span>人<span class="text-xs text-ink/50 font-body font-bold ml-1">（<span class="part-n">${ev.participant_n || 0}</span>組）</span></h3>
+        <div id="partArea"></div>
+      </section>
 
       ${mine
         ? `<div class="grid grid-cols-3 gap-2 mt-4">
@@ -701,11 +867,7 @@ function openDetail(id) {
              <button id="btnDelete" class="sticker bg-white rounded-2xl py-3 font-bold text-flare"><i class="fa-solid fa-trash-can mr-1"></i>削除</button>
              <button id="btnShare" class="sticker bg-white rounded-2xl py-3 font-bold"><i class="fa-solid fa-share-nodes mr-1"></i>シェア</button>
            </div>`
-        : `<div class="grid grid-cols-2 gap-2 mt-4">
-             <button id="btnJoin" class="sticker bg-flare text-white rounded-2xl py-3 font-display"><i class="fa-solid fa-hand mr-1"></i>参加したい</button>
-             <button id="btnShare" class="sticker bg-white rounded-2xl py-3 font-bold"><i class="fa-solid fa-share-nodes mr-1"></i>シェア</button>
-           </div>`}
-      <a class="block text-center mt-3 text-sm font-bold underline" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${ev.lat},${ev.lng}"><i class="fa-solid fa-route mr-1"></i>ここまでの道順</a>
+        : `<button id="btnShare" class="sticker bg-white w-full rounded-2xl py-3 mt-4 font-bold"><i class="fa-solid fa-share-nodes mr-1"></i>シェア</button>`}
     </div>`;
 
   $('.close-sheet-d').addEventListener('click', closeSheets);
@@ -713,28 +875,27 @@ function openDetail(id) {
   if (mine) {
     $('#btnEdit').addEventListener('click', () => openEdit(ev));
     $('#btnDelete').addEventListener('click', () => deleteEvent(ev));
-  } else $('#btnJoin').addEventListener('click', () => {
-    if (!isMember()) return requireAuth('参加リクエストを送るには会員登録が必要です。', () => openDetail(ev.id));
-    $('#joinBox').classList.toggle('hidden');
-    $('#joinMsg').focus();
-  });
-  const js = $('#joinSend'); if (js) js.addEventListener('click', () => sendJoin(ev));
+  }
+
+  renderParts(ev);
+  if (isMember() && !state.partData) loadParts(ev);
 
   clearInterval(state.tick);
   state.tick = setInterval(() => {
     const el = $('#countdown'); if (!el) return;
     const r = remain(ev.expires_at); el.textContent = r.text;
+    const s = evStatus(ev), se = $('#evStatus');
+    if (se && se.textContent !== s.text) { se.textContent = s.text; se.className = `ml-auto text-xs font-bold rounded-full px-2 py-0.5 shrink-0 ${s.cls}`; }
     if (r.ms <= 0) { clearInterval(state.tick); loadEvents(true); }
   }, 1000);
 
   history.replaceState(null, '', '?e=' + encodeURIComponent(ev.id));
   openSheet('sheetDetail');
-  $('#sheetDetail .sheet-body').scrollTop = 0;
 }
 
 async function shareEvent(ev) {
   const url = location.origin + location.pathname + '?e=' + encodeURIComponent(ev.id);
-  const text = `${ev.icon} ${ev.title}${ev.summary ? '｜' + ev.summary : ''}\n${remain(ev.expires_at).text}まで募集中！ #今CoCo`;
+  const text = `${ev.icon} ${ev.title}${ev.summary ? '｜' + ev.summary : ''}\n📅 ${fmtRange(evStart(ev), evEnd(ev))}\n📍 ${placeText(ev)} #今CoCo`;
   try {
     if (navigator.share) { await navigator.share({ title: '今CoCo', text, url }); return; }
     await navigator.clipboard.writeText(text + '\n' + url);
@@ -744,25 +905,12 @@ async function shareEvent(ev) {
   }
 }
 
-async function sendJoin(ev) {
-  showLoading(['参加リクエストを送っています...']);
-  try {
-    await apiPost({ action: 'joinRequest', token: state.auth?.token, id: ev.id, message: $('#joinMsg').value });
-    hideLoading(); toast('参加リクエストを送りました！');
-    ev.request_count++;
-    openDetail(ev.id);
-  } catch (err) {
-    hideLoading();
-    if (!handleAuthError(err, () => openDetail(ev.id))) toast(err.message, 4000);
-  }
-}
-
 async function deleteEvent(ev, fromMy) {
-  if (!confirm(`「${ev.title}」を削除して地図から消しますか？\n届いた参加リクエストも見られなくなります。`)) return;
-  showLoading(['投稿を削除しています...']);
+  if (!confirm(`「${ev.title}」を削除して地図から消しますか？\n参加表明のリストも見られなくなります。`)) return;
+  showLoading(['イベントを削除しています...']);
   try {
     await apiPost({ action: 'deleteEvent', token: state.auth?.token, id: ev.id });
-    hideLoading(); closeSheets(); toast('投稿を削除しました');
+    hideLoading(); closeSheets(); toast('イベントを削除しました');
     state.events = state.events.filter(x => x.id !== ev.id);
     renderMarkers();
     if (fromMy) setTimeout(openMyPage, 300);
@@ -770,6 +918,150 @@ async function deleteEvent(ev, fromMy) {
     hideLoading();
     if (!handleAuthError(err)) toast(err.message, 4000);
   }
+}
+
+/* ---------- 参加表明 ---------- */
+async function loadParts(ev) {
+  try {
+    const j = await apiPost({ action: 'getParticipants', token: state.auth.token, event_id: ev.id });
+    applyParts(ev, j);
+  } catch (err) {
+    if (handleAuthError(err, () => openDetail(ev.id))) return;
+    const box = $('#partArea'); if (box) box.innerHTML = `<p class="text-sm text-flare font-bold">${esc(err.message)}</p>`;
+  }
+}
+function applyParts(ev, j) {
+  state.partData = j;
+  ev.participant_n = j.n; ev.participant_count = j.count;
+  $$('.part-count').forEach(e => e.textContent = j.count);
+  $$('.part-n').forEach(e => e.textContent = j.n);
+  if (state.openEventId === ev.id) renderParts(ev);
+  const m = state.markers.get(ev.id); if (m) m.setIcon(pinIcon(ev, 30));
+}
+function partListHtml(list, owner) {
+  if (!list || !list.length) return '<p class="text-sm text-ink/60">まだ参加表明はありません</p>';
+  return `<ul class="space-y-1.5">${list.map(p => `
+    <li class="part-row bg-sky rounded-xl px-3 py-2" data-pid="${esc(p.id)}">
+      <div class="flex items-center gap-2">
+        <span class="font-bold flex-1 truncate">${esc(p.nickname)}さん${p.mine ? '<span class="text-[10px] ml-1 bg-sun border border-ink rounded px-1">あなた</span>' : ''}</span>
+        <span class="text-xs font-bold shrink-0">${p.people}人</span>
+        ${owner ? `<button class="p-edit w-8 h-8 shrink-0" aria-label="${esc(p.nickname)}さんを編集"><i class="fa-solid fa-pen"></i></button>
+                   <button class="p-del w-8 h-8 shrink-0 text-flare" aria-label="${esc(p.nickname)}さんを削除"><i class="fa-solid fa-trash-can"></i></button>` : ''}
+      </div>
+      ${p.message ? `<p class="text-sm break-words">${esc(p.message)}</p>` : ''}
+      <p class="text-[11px] text-ink/50">${p.added_by === 'owner' ? '主催者が登録・' : ''}${ago(p.created_at)}</p>
+    </li>`).join('')}</ul>`;
+}
+function renderParts(ev) {
+  const box = $('#partArea'); if (!box) return;
+  const ended = evStatus(ev).key === 'ended';
+  if (!isMember()) {
+    box.innerHTML = `<p class="text-sm mb-3">${ended ? 'このイベントは終了しました。' : '参加表明には会員登録（無料）が必要です。参加者リストは主催者と参加者だけに見えます。'}</p>
+      ${ended ? '' : '<button id="partGuest" class="sticker bg-flare text-white w-full rounded-2xl py-3 font-display"><i class="fa-solid fa-hand mr-1"></i>参加表明する</button>'}`;
+    const g = $('#partGuest'); if (g) g.addEventListener('click', () => requireAuth('参加表明するには会員登録が必要です。', () => openDetail(ev.id)));
+    return;
+  }
+  const d = state.partData && state.partData.event_id === ev.id ? state.partData : null;
+  if (!d) { box.innerHTML = '<p class="text-sm text-ink/60">読み込み中...</p>'; return; }
+
+  let html = '';
+  if (d.isOwner) {
+    html += `<p class="text-xs text-ink/60 mb-2">主催者のあなたは、参加者の追加・編集・削除ができます。</p>`;
+    html += partListHtml(d.list, true);
+    html += `<div class="mt-4 border-t-2 border-ink/10 pt-3">
+      <p class="label">参加者を追加</p>
+      <div class="flex gap-2 mb-2">
+        <input id="addName" class="field field-sm" maxlength="20" placeholder="名前">
+        <select id="addPeople" class="field field-sm w-24 shrink-0">${peopleOptions(1)}</select>
+      </div>
+      <input id="addMsg" class="field field-sm mb-2" maxlength="140" placeholder="メモ（任意）">
+      <p id="addErr" class="form-err"></p>
+      <button id="addSubmit" class="sticker bg-ink text-white w-full rounded-xl py-2.5 font-bold"><i class="fa-solid fa-user-plus mr-1"></i>追加する</button>
+    </div>`;
+  } else if (d.joined) {
+    html += `<div class="bg-sun border-2 border-ink rounded-xl p-3 mb-3">
+      <p class="font-bold mb-2"><i class="fa-solid fa-circle-check mr-1"></i>参加表明しています</p>
+      <div class="flex gap-2 mb-2">
+        <select id="joinPeople" class="field field-sm w-28 shrink-0">${peopleOptions(d.me.people)}</select>
+        <input id="joinMsg" class="field field-sm" maxlength="140" value="${esc(d.me.message)}" placeholder="ひとこと（任意）">
+      </div>
+      <p id="joinErr" class="form-err"></p>
+      <div class="grid grid-cols-2 gap-2">
+        <button id="joinSave" class="sticker bg-white rounded-xl py-2 text-sm font-bold">内容を更新</button>
+        <button id="joinCancel" class="sticker bg-white rounded-xl py-2 text-sm font-bold text-flare">取り消す</button>
+      </div>
+    </div>
+    <p class="label">参加者リスト（主催者と参加者だけに表示）</p>${partListHtml(d.list, false)}`;
+  } else if (ended) {
+    html += '<p class="text-sm text-ink/60">このイベントは終了しました。</p>';
+  } else {
+    html += `<div class="flex gap-2 mb-2">
+        <select id="joinPeople" class="field field-sm w-28 shrink-0" aria-label="人数">${peopleOptions(1)}</select>
+        <input id="joinMsg" class="field field-sm" maxlength="140" placeholder="ひとこと（例：10分で着きます！）">
+      </div>
+      <p id="joinErr" class="form-err"></p>
+      <button id="joinSave" class="sticker bg-flare text-white w-full rounded-2xl py-3 font-display"><i class="fa-solid fa-hand mr-1"></i>参加表明する</button>
+      <p class="text-[11px] text-ink/50 mt-2">参加表明すると、ニックネームとひとことが主催者とほかの参加者に表示され、参加者リストが見られるようになります。</p>`;
+  }
+  box.innerHTML = html;
+  bindParts(ev, d);
+}
+async function partCall(ev, body, btn, errEl, okMsg) {
+  if (btn) btn.disabled = true;
+  try {
+    const j = await apiPost({ token: state.auth.token, event_id: ev.id, ...body });
+    applyParts(ev, j);
+    if (okMsg) toast(okMsg);
+  } catch (err) {
+    if (handleAuthError(err, () => openDetail(ev.id))) return;
+    if (errEl) errEl.textContent = err.message; else toast(err.message, 4000);
+  } finally { if (btn) btn.disabled = false; }
+}
+function bindParts(ev, d) {
+  const js = $('#joinSave');
+  if (js) js.addEventListener('click', () => partCall(ev,
+    { action: 'saveParticipant', people: $('#joinPeople').value, message: $('#joinMsg').value },
+    js, $('#joinErr'), d.joined ? '参加表明を更新しました' : '参加表明しました！'));
+  const jc = $('#joinCancel');
+  if (jc) jc.addEventListener('click', () => {
+    if (!confirm('参加表明を取り消しますか？')) return;
+    partCall(ev, { action: 'deleteParticipant', pid: d.me.id }, jc, $('#joinErr'), '参加表明を取り消しました');
+  });
+  const add = $('#addSubmit');
+  if (add) add.addEventListener('click', () => {
+    const name = $('#addName').value.trim();
+    if (!name) { $('#addErr').textContent = '名前を入力してください'; return; }
+    partCall(ev, { action: 'saveParticipant', asOwner: true, nickname: name, people: $('#addPeople').value, message: $('#addMsg').value },
+      add, $('#addErr'), `${name}さんを追加しました`);
+  });
+  if (!d.isOwner) return;
+  $$('#partArea .part-row').forEach(row => {
+    const p = d.list.find(x => x.id === row.dataset.pid); if (!p) return;
+    row.querySelector('.p-del').addEventListener('click', () => {
+      if (!confirm(`${p.nickname}さんを参加者リストから削除しますか？`)) return;
+      partCall(ev, { action: 'deleteParticipant', pid: p.id }, null, null, '削除しました');
+    });
+    row.querySelector('.p-edit').addEventListener('click', () => {
+      row.innerHTML = `<div class="flex gap-2 mb-2">
+          <input class="e-name field field-sm" maxlength="20" value="${esc(p.nickname)}" aria-label="名前">
+          <select class="e-people field field-sm w-24 shrink-0" aria-label="人数">${peopleOptions(p.people)}</select>
+        </div>
+        <input class="e-msg field field-sm mb-2" maxlength="140" value="${esc(p.message)}" placeholder="メモ" aria-label="メモ">
+        <p class="e-err form-err"></p>
+        <div class="grid grid-cols-2 gap-2">
+          <button class="e-save sticker bg-ink text-white rounded-xl py-2 text-sm font-bold">保存</button>
+          <button class="e-cancel sticker bg-white rounded-xl py-2 text-sm font-bold">やめる</button>
+        </div>`;
+      row.querySelector('.e-cancel').addEventListener('click', () => renderParts(ev));
+      const sv = row.querySelector('.e-save');
+      sv.addEventListener('click', () => {
+        const nn = row.querySelector('.e-name').value.trim();
+        if (!nn) { row.querySelector('.e-err').textContent = '名前を入力してください'; return; }
+        partCall(ev, { action: 'saveParticipant', pid: p.id, nickname: nn, people: row.querySelector('.e-people').value, message: row.querySelector('.e-msg').value },
+          sv, row.querySelector('.e-err'), '更新しました');
+      });
+    });
+  });
 }
 
 /* ---------- 会員（ログイン／新規登録／パスワード忘れ／パスワード更新） ---------- */
@@ -806,6 +1098,7 @@ async function withButton(btn, fn) {
 }
 function finishAuth() {
   closeSheets();
+  state.partData = null;
   renderMarkers();
   const f = state.afterAuth; state.afterAuth = null;
   if (f) setTimeout(f, 300);
@@ -817,7 +1110,6 @@ $$('.go-view').forEach(b => b.addEventListener('click', () => {
   setAuthView(b.dataset.view);
 }));
 
-/* 新規登録 → 仮パスワードをメールで受け取る */
 $('#regSubmit').addEventListener('click', () => withButton($('#regSubmit'), async () => {
   const nickname = $('#regNick').value.trim(), email = $('#regEmail').value.trim();
   if (nickname.length < 2) return authErr('register', 'ニックネームは2文字以上で入力してください');
@@ -831,7 +1123,6 @@ $('#regSubmit').addEventListener('click', () => withButton($('#regSubmit'), asyn
   } catch (err) { authErr('register', err.message); }
 }));
 
-/* ログイン（仮パスワードならパスワード更新へ） */
 $('#loginSubmit').addEventListener('click', () => withButton($('#loginSubmit'), async () => {
   const email = $('#loginEmail').value.trim(), password = $('#loginPass').value;
   if (!validEmail(email) || !password) return authErr('login', 'メールアドレスとパスワードを入力してください');
@@ -850,7 +1141,6 @@ $('#loginSubmit').addEventListener('click', () => withButton($('#loginSubmit'), 
   } catch (err) { authErr('login', err.message); }
 }));
 
-/* パスワード忘れ → 仮パスワード再発行 */
 $('#forgotSubmit').addEventListener('click', () => withButton($('#forgotSubmit'), async () => {
   const email = $('#forgotEmail').value.trim();
   if (!validEmail(email)) return authErr('forgot', 'メールアドレスを正しく入力してください');
@@ -863,7 +1153,6 @@ $('#forgotSubmit').addEventListener('click', () => withButton($('#forgotSubmit')
   } catch (err) { authErr('forgot', err.message); }
 }));
 
-/* 初回・再発行後のパスワード更新 */
 $('#chgSubmit').addEventListener('click', () => withButton($('#chgSubmit'), async () => {
   const current = $('#chgCurrent').value, next = $('#chgNew').value, confirm = $('#chgConfirm').value;
   if (!current) return authErr('change', '仮パスワードを入力してください');
@@ -895,34 +1184,45 @@ async function openMyPage() {
   try {
     const j = await apiPost({ action: 'getMyData', token: state.auth.token });
     $('#myEmail').textContent = j.user.email || '';
-    const evHtml = j.myEvents.length ? j.myEvents.map(ev => `
-      <div class="border-2 border-ink rounded-2xl p-3 mb-3">
+    const evHtml = j.myEvents.length ? j.myEvents.map(ev => {
+      const st = evStatus(ev);
+      return `<div class="border-2 border-ink rounded-2xl p-3 mb-3">
         <button class="my-ev w-full text-left flex items-center gap-2" data-id="${esc(ev.id)}">
           <span class="text-2xl">${esc(ev.icon)}</span>
-          <span class="font-bold flex-1 truncate">${esc(ev.title)}</span>
-          <span class="text-xs font-bold text-ink/60 shrink-0">${remain(ev.expires_at).text}</span>
+          <span class="min-w-0 flex-1">
+            <span class="block font-bold truncate">${esc(ev.title)}</span>
+            <span class="block text-xs text-ink/60 truncate">${esc(fmtRange(evStart(ev), evEnd(ev)))}</span>
+          </span>
+          <span class="text-[11px] font-bold rounded-full px-2 py-0.5 shrink-0 ${st.cls}">${esc(st.text)}</span>
         </button>
-        <div class="grid grid-cols-2 gap-2 mt-2">
+        <p class="text-sm mt-2"><i class="fa-solid fa-user-group mr-1"></i>参加表明 <b>${ev.participant_count}</b>人（${ev.participant_n}組）
+          ${ev.participants.length ? `<span class="text-xs text-ink/60">：${ev.participants.slice(0, 6).map(p => esc(p.nickname)).join('、')}${ev.participants.length > 6 ? ' ほか' : ''}</span>` : ''}</p>
+        <div class="grid grid-cols-3 gap-2 mt-2">
+          <button class="my-ev sticker bg-white rounded-xl py-2 text-sm font-bold" data-id="${esc(ev.id)}"><i class="fa-solid fa-users mr-1"></i>参加者</button>
           <button class="my-edit sticker bg-sun rounded-xl py-2 text-sm font-bold" data-id="${esc(ev.id)}"><i class="fa-solid fa-pen mr-1"></i>修正</button>
           <button class="my-del sticker bg-white rounded-xl py-2 text-sm font-bold text-flare" data-id="${esc(ev.id)}"><i class="fa-solid fa-trash-can mr-1"></i>削除</button>
         </div>
-        ${ev.requests.length ? `<ul class="mt-2 space-y-1.5">${ev.requests.map(q => `
-          <li class="text-sm bg-sky rounded-xl px-3 py-2"><span class="font-bold">${esc(q.nickname)}さん</span><span class="text-xs text-ink/50 ml-1">${ago(q.created_at)}</span><br>${esc(q.message)}</li>`).join('')}</ul>`
-          : '<p class="text-xs text-ink/60 mt-2">参加リクエストはまだありません</p>'}
-      </div>`).join('') : '<p class="text-sm text-ink/60 mb-3">公開中の投稿はありません。右下の「今ココ！」から投稿できます。</p>';
-    const sentHtml = j.sentRequests.length ? `<ul class="space-y-1.5">${j.sentRequests.map(s => `
-      <li class="flex items-center gap-2 text-sm"><span>${esc(s.icon)}</span><span class="flex-1 truncate ${s.active ? 'font-bold' : 'text-ink/50 line-through'}">${esc(s.title)}</span><span class="text-xs text-ink/50">${ago(s.created_at)}</span></li>`).join('')}</ul>`
-      : '<p class="text-sm text-ink/60">まだ送っていません</p>';
+      </div>`;
+    }).join('') : '<p class="text-sm text-ink/60 mb-3">公開中のイベントはありません。右下の「今ココ！」から投稿できます。</p>';
+    const joinedHtml = j.joinedEvents.length ? `<ul class="space-y-1.5">${j.joinedEvents.map(s => `
+      <li><button class="my-joined w-full text-left flex items-center gap-2 text-sm" data-id="${esc(s.event_id)}" ${s.active ? '' : 'disabled'}>
+        <span>${esc(s.icon)}</span>
+        <span class="flex-1 truncate ${s.active ? 'font-bold' : 'text-ink/50 line-through'}">${esc(s.title)}</span>
+        <span class="text-xs text-ink/50 shrink-0">${s.start_at ? esc(fmtDT(new Date(s.start_at))) : ''}・${s.people}人</span>
+      </button></li>`).join('')}</ul>`
+      : '<p class="text-sm text-ink/60">まだ参加表明していません</p>';
     $('#myBody').innerHTML = `
-      <h3 class="font-display text-base mb-2">公開中の投稿と参加リクエスト</h3>${evHtml}
-      <h3 class="font-display text-base mt-5 mb-2">送った参加リクエスト</h3>${sentHtml}`;
+      <h3 class="font-display text-base mb-2">主催しているイベント</h3>${evHtml}
+      <h3 class="font-display text-base mt-5 mb-2">参加表明したイベント</h3>${joinedHtml}`;
     const myMap = Object.fromEntries(j.myEvents.map(ev => [ev.id, ev]));
-    $$('.my-ev').forEach(b => b.addEventListener('click', () => {
-      const ev = state.events.find(x => x.id === b.dataset.id);
-      if (ev) { state.map.flyTo([ev.lat, ev.lng], 16); openDetail(ev.id); }
-    }));
-    $$('.my-edit').forEach(b => b.addEventListener('click', () => openEdit(myMap[b.dataset.id])));
-    $$('.my-del').forEach(b => b.addEventListener('click', () => deleteEvent(myMap[b.dataset.id], true)));
+    const goDetail = id => {
+      const ev = state.events.find(x => x.id === id);
+      if (!ev) { toast('地図に表示されていないイベントです'); return; }
+      state.map.flyTo([ev.lat, ev.lng], 15); openDetail(ev.id);
+    };
+    $$('#myBody .my-ev, #myBody .my-joined').forEach(b => b.addEventListener('click', () => goDetail(b.dataset.id)));
+    $$('#myBody .my-edit').forEach(b => b.addEventListener('click', () => openEdit(myMap[b.dataset.id])));
+    $$('#myBody .my-del').forEach(b => b.addEventListener('click', () => deleteEvent(myMap[b.dataset.id], true)));
   } catch (err) {
     if (handleAuthError(err)) return;
     $('#myBody').innerHTML = `<p class="text-sm text-flare font-bold">${esc(err.message)}</p>`;
@@ -961,24 +1261,27 @@ $('#setPassSubmit').addEventListener('click', () => withButton($('#setPassSubmit
 
 $('#btnLogout').addEventListener('click', async () => {
   const token = state.auth?.token;
-  saveAuth(null); closeSheets(); renderMarkers(); toast('ログアウトしました');
+  saveAuth(null); state.partData = null; closeSheets(); renderMarkers(); toast('ログアウトしました');
   try { await apiPost({ action: 'logout', token }); } catch (_) {}
 });
 
-/* ---------- 投稿フロー ---------- */
-function newDraft(latlng) {
-  return {
-    editId: null, latlng: latlng || null, category: null, media: null,
-    existingMedia: null, removeMedia: false, origExpires: null,
-    exp: '3h', capacity: 'あと2人', fee: '割り勘', ages: ['誰でも'], gender: '',
-  };
-}
+/* ---------- 投稿フロー（新規・修正） ---------- */
 const AGE_VALUES = ['10代', '20代', '30代', '40代', '50代', '60代〜'];
 const GENDER_VALUES = ['女性歓迎', '男性歓迎', '女性のみ', '男性のみ'];
 const CAP_VALUES = ['あと1人', 'あと2人', 'あと3人', '何人でも', '募集なし'];
 const FEE_VALUES = ['無料', '割り勘', '各自持参'];
 
-/** 保存済みの参加条件を、年齢・性別・その他に分け直す */
+function newDraft(latlng) {
+  return {
+    editId: null, latlng: latlng || null, category: null, media: null,
+    existingMedia: null, removeMedia: false, origExpires: null,
+    exp: 'end', capacity: 'あと2人', fee: '割り勘', ages: ['誰でも'], gender: '',
+  };
+}
+function toLocalInput(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function readDT(sel) { const v = $(sel).value; if (!v) return null; const d = new Date(v); return isNaN(d) ? null : d; }
+function nowMinute() { const d = new Date(); d.setSeconds(0, 0); return d; }
+
 function parseConditions(text) {
   const out = { ages: ['誰でも'], gender: '', extra: [] };
   String(text || '').split('／').map(x => x.trim()).filter(Boolean).forEach((part, i) => {
@@ -993,7 +1296,42 @@ function parseConditions(text) {
   return { ages: out.ages, gender: out.gender, extra: out.extra.join('／') };
 }
 
-/** 自分の投稿を修正（投稿フォームを修正モードで開く） */
+function setSnsInputs(v) {
+  $('#snsX').value = v.x || ''; $('#snsIg').value = v.instagram || ''; $('#snsLine').value = v.line || '';
+  $('#snsFb').value = v.facebook || ''; $('#snsOther').value = v.other || '';
+}
+function readSnsInputs() {
+  return { x: $('#snsX').value.trim(), instagram: $('#snsIg').value.trim(), line: $('#snsLine').value.trim(), facebook: $('#snsFb').value.trim(), other: $('#snsOther').value.trim() };
+}
+function snsFromEvent(list) {
+  const v = {};
+  (list || []).forEach(s => {
+    if (s.type === 'x' || s.type === 'instagram') v[s.type] = String(s.label).replace(/^@/, '');
+    else v[s.type] = s.url;
+  });
+  return v;
+}
+
+function startPostAt(latlng) {
+  if (state.picking) { setPickedLocation(latlng); return; }
+  if (!isMember()) return requireAuth('投稿するには会員登録が必要です。', () => startPostAt(latlng));
+  openPost(latlng);
+}
+function openPost(latlng) {
+  if (state.draft?.editId) state.draft = null;
+  if (!state.draft) {
+    state.draft = newDraft(latlng);
+    resetPostForm();
+    const s = nowMinute();
+    $('#startAt').value = toLocalInput(s);
+    $('#endAt').value = toLocalInput(new Date(s.getTime() + 3 * 3600000));
+    try { setSnsInputs(JSON.parse(localStorage.getItem(LS_SNS) || '{}')); } catch (_) { setSnsInputs({}); }
+  } else if (latlng) state.draft.latlng = latlng;
+  if (state.draft.latlng) showPickMarker(state.draft.latlng);
+  goStep(state.draft.latlng && state.draft.category ? state.step : 1);
+  openSheet('sheetPost');
+}
+
 function openEdit(ev) {
   if (!ev) return;
   if (!isMember()) return requireAuth('修正するにはログインが必要です。', () => openEdit(ev));
@@ -1013,39 +1351,30 @@ function openEdit(ev) {
   resetPostForm();
   $('#pTitle').value = ev.title; $('#pTitleCount').textContent = ev.title.length;
   $('#pDesc').value = ev.description || ''; $('#pDescCount').textContent = (ev.description || '').length;
+  $('#pAddress').value = ev.address || '';
+  $('#startAt').value = toLocalInput(new Date(evStart(ev)));
+  $('#endAt').value = toLocalInput(new Date(evEnd(ev)));
   $('#capFree').value = CAP_VALUES.includes(ev.capacity) ? '' : ev.capacity;
   $('#feeFree').value = FEE_VALUES.includes(ev.fee) ? '' : ev.fee;
   $('#condFree').value = cond.extra.slice(0, 40);
+  setSnsInputs(snsFromEvent(ev.sns));
   renderMediaPreview();
   syncChips();
-  state.step = 1;
   showPickMarker(state.draft.latlng);
   state.map.setView(state.draft.latlng, Math.max(state.map.getZoom(), 15));
   goStep(1);
   setTimeout(() => openSheet('sheetPost'), 250);
 }
-function startPostAt(latlng) {
-  if (state.picking) { setPickedLocation(latlng); return; }
-  if (!isMember()) return requireAuth('投稿するには会員登録が必要です。', () => startPostAt(latlng));
-  openPost(latlng);
-}
-function openPost(latlng) {
-  if (state.draft?.editId) state.draft = null;
-  if (!state.draft) {
-    state.draft = newDraft(latlng);
-    resetPostForm();
-  } else if (latlng) state.draft.latlng = latlng;
-  if (state.draft.latlng) showPickMarker(state.draft.latlng);
-  goStep(state.draft.latlng && state.draft.category ? state.step : 1);
-  openSheet('sheetPost');
-}
+
 function resetPostForm() {
-  ['#pTitle', '#pDesc', '#capFree', '#feeFree', '#condFree', '#expCustom'].forEach(s => $(s).value = '');
+  ['#pTitle', '#pDesc', '#pAddress', '#placeQ', '#capFree', '#feeFree', '#condFree', '#expCustom', '#startAt', '#endAt'].forEach(s => $(s).value = '');
+  $('#placeResults').innerHTML = '';
+  $('#locText').textContent = '📍 位置：未設定';
   $('#pTitleCount').textContent = '0'; $('#pDescCount').textContent = '0';
   $('#mediaPreview').innerHTML = ''; $('#mediaPreview').classList.add('hidden');
   $('#expCustom').classList.add('hidden');
   const editing = !!state.draft?.editId;
-  $('#postTitle').textContent = editing ? '投稿を修正' : '今ココ！を投稿';
+  $('#postTitle').textContent = editing ? 'イベントを修正' : '今ココ！を投稿';
   $('#expKeep').classList.toggle('hidden', !editing);
   renderCatGrid(); syncChips();
 }
@@ -1059,43 +1388,68 @@ function renderCatGrid() {
     updateNav();
   }));
 }
-function syncChips() {
-  const d = state.draft;
-  $$('#expireChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.exp === d.exp));
-  $$('#capChips .chip').forEach(c => c.setAttribute('aria-pressed', !$('#capFree').value && c.dataset.v === d.capacity));
-  $$('#feeChips .chip').forEach(c => c.setAttribute('aria-pressed', !$('#feeFree').value && c.dataset.v === d.fee));
-  $$('#ageChips .chip').forEach(c => c.setAttribute('aria-pressed', d.ages.includes(c.dataset.v)));
-  $$('#genderChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.v === d.gender));
-  $('#expPreview').textContent = expiresAt() ? `${fmtTime(expiresAt())} に地図から消えます` : '日時を選んでください';
-}
+
+/* 日時 */
 function expiresAt() {
   const now = new Date(), d = state.draft;
   if (d.exp === 'keep') return d.origExpires ? new Date(d.origExpires) : null;
+  if (d.exp === 'end') return readDT('#endAt');
   if (d.exp === '1h') return new Date(now.getTime() + 3600000);
   if (d.exp === '3h') return new Date(now.getTime() + 3 * 3600000);
   if (d.exp === 'today') {
     const t = new Date(now); t.setHours(23, 59, 0, 0);
     return t.getTime() - now.getTime() < 10 * 60000 ? null : t;
   }
-  const v = $('#expCustom').value; if (!v) return null;
-  const t = new Date(v); return isNaN(t) ? null : t;
+  return readDT('#expCustom');
 }
-function toLocalInput(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
-
+function timeError() {
+  const s = readDT('#startAt'), e = readDT('#endAt'), x = expiresAt(), now = Date.now();
+  if (!s || !e) return '開始と終了の日時を入れてください';
+  if (e <= s) return '終了は開始より後にしてください';
+  if (e - s > 14 * DAY) return '開催期間は14日以内にしてください';
+  if (e.getTime() <= now) return '終了日時が過ぎています';
+  if (s.getTime() > now + 31 * DAY) return '31日以内に始まるイベントにしてください';
+  if (!x) return '地図に表示する期限を選んでください';
+  if (x.getTime() <= now + 5 * 60000) return '表示期限は5分以上先にしてください';
+  if (s.getTime() > now && x < s) return '表示期限が開始より前です。「開催終了まで」がおすすめです';
+  return '';
+}
+function syncChips() {
+  const d = state.draft; if (!d) return;
+  $$('#expireChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.exp === d.exp));
+  $$('#capChips .chip').forEach(c => c.setAttribute('aria-pressed', !$('#capFree').value && c.dataset.v === d.capacity));
+  $$('#feeChips .chip').forEach(c => c.setAttribute('aria-pressed', !$('#feeFree').value && c.dataset.v === d.fee));
+  $$('#ageChips .chip').forEach(c => c.setAttribute('aria-pressed', d.ages.includes(c.dataset.v)));
+  $$('#genderChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.v === d.gender));
+  const x = expiresAt();
+  $('#expPreview').textContent = x ? `${fmtDT(x)} に地図から消えます` : '';
+  $('#timeErr').textContent = state.step === 3 ? timeError() : '';
+}
+$('#startNow').addEventListener('click', () => {
+  const s = nowMinute(), e = readDT('#endAt'), old = readDT('#startAt');
+  const dur = e && old && e > old ? e - old : 3 * 3600000;
+  $('#startAt').value = toLocalInput(s);
+  $('#endAt').value = toLocalInput(new Date(s.getTime() + dur));
+  syncChips(); updateNav();
+});
+$('#durChips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  const s = readDT('#startAt'); if (!s) return;
+  $('#endAt').value = toLocalInput(new Date(s.getTime() + Number(b.dataset.h) * 3600000));
+  syncChips(); updateNav();
+});
+['#startAt', '#endAt', '#expCustom'].forEach(sel => $(sel).addEventListener('change', () => { syncChips(); updateNav(); }));
 $('#expireChips').addEventListener('click', e => {
   const b = e.target.closest('.chip'); if (!b) return;
   state.draft.exp = b.dataset.exp;
   const custom = b.dataset.exp === 'custom';
   $('#expCustom').classList.toggle('hidden', !custom);
-  if (custom) {
-    const now = new Date();
-    $('#expCustom').min = toLocalInput(new Date(now.getTime() + 10 * 60000));
-    $('#expCustom').max = toLocalInput(new Date(now.getTime() + 72 * 3600000));
-    if (!$('#expCustom').value) $('#expCustom').value = toLocalInput(new Date(now.getTime() + 5 * 3600000));
+  if (custom && !$('#expCustom').value) {
+    const base = readDT('#endAt') || new Date(Date.now() + 5 * 3600000);
+    $('#expCustom').value = toLocalInput(base);
   }
   syncChips(); updateNav();
 });
-$('#expCustom').addEventListener('change', () => { syncChips(); updateNav(); });
 $('#capChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.draft.capacity = b.dataset.v; $('#capFree').value = ''; syncChips(); });
 $('#feeChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.draft.fee = b.dataset.v; $('#feeFree').value = ''; syncChips(); });
 $('#capFree').addEventListener('input', syncChips);
@@ -1123,6 +1477,13 @@ function showPickMarker(ll) {
   $('#locText').innerHTML = `<i class="fa-solid fa-location-dot text-flare mr-1"></i>${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
 }
 function clearPickMarker() { if (state.pickMarker) { state.pickMarker.remove(); state.pickMarker = null; } }
+function setDraftLocation(ll, address) {
+  state.draft.latlng = ll;
+  showPickMarker(ll);
+  if (address) $('#pAddress').value = address;
+  state.map.setView(ll, 16);
+  updateNav();
+}
 function setPickedLocation(ll) {
   state.picking = false;
   $('#pickBanner').classList.add('hidden');
@@ -1130,6 +1491,40 @@ function setPickedLocation(ll) {
   showPickMarker(ll);
   openSheet('sheetPost'); updateNav();
 }
+function parseLatLng(q) {
+  const m = q.match(/^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,，、\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
+  if (!m) return null;
+  let a = Number(m[1]), b = Number(m[2]);
+  if (Math.abs(a) > 90 && Math.abs(b) <= 90) [a, b] = [b, a];
+  if (Math.abs(a) > 90 || Math.abs(b) > 180) return null;
+  return L.latLng(a, b);
+}
+async function searchPlace() {
+  const q = $('#placeQ').value.trim(); if (!q) return;
+  const box = $('#placeResults');
+  const ll = parseLatLng(q);
+  if (ll) { box.innerHTML = ''; setDraftLocation(ll, ''); toast('緯度・経度で場所を設定しました'); return; }
+  box.innerHTML = '<p class="text-xs font-bold text-ink/60">検索中...</p>';
+  let results = [];
+  try {
+    const r = await fetch('https://msearch.gsi.go.jp/address-search/AddressSearch?q=' + encodeURIComponent(q));
+    const a = await r.json();
+    results = (a || []).slice(0, 5).map(x => ({ title: x.properties.title, lat: x.geometry.coordinates[1], lng: x.geometry.coordinates[0] }));
+  } catch (_) {
+    try { results = (await apiGet({ action: 'geocode', q })).results || []; } catch (_) {}
+  }
+  if (!results.length) { box.innerHTML = '<p class="text-xs font-bold text-flare">見つかりませんでした。別の書き方か「地図で選ぶ」をお試しください</p>'; return; }
+  if (results.length === 1) { box.innerHTML = ''; setDraftLocation(L.latLng(results[0].lat, results[0].lng), results[0].title); return; }
+  box.innerHTML = `<p class="text-xs font-bold text-ink/60 mb-1">候補を選んでください</p>` + results.map((r, i) =>
+    `<button class="place-pick w-full text-left text-sm bg-sky border-2 border-ink rounded-xl px-3 py-2 mb-1.5" data-i="${i}"><i class="fa-solid fa-location-dot text-flare mr-1"></i>${esc(r.title)}</button>`).join('');
+  $$('#placeResults .place-pick').forEach(b => b.addEventListener('click', () => {
+    const r = results[Number(b.dataset.i)];
+    box.innerHTML = '';
+    setDraftLocation(L.latLng(r.lat, r.lng), r.title);
+  }));
+}
+$('#placeSearch').addEventListener('click', searchPlace);
+$('#placeQ').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchPlace(); } });
 $('#pickOnMap').addEventListener('click', () => {
   state.picking = true;
   $$('.sheet.open').forEach(s => s.classList.remove('open'));
@@ -1208,47 +1603,53 @@ $('#fileCamera').addEventListener('change', onFile);
 $('#fileLibrary').addEventListener('change', onFile);
 
 /* ステップ */
-const STEP_LABELS = { 1: '1／3　場所となにしてるか', 2: '2／3　内容と写真', 3: '3／3　表示時間と募集' };
+const STEP_LABELS = { 1: '1／4　場所と種別', 2: '2／4　内容と写真', 3: '3／4　開催日時と表示期限', 4: '4／4　募集と連絡先' };
+const LAST_STEP = 4;
 function goStep(n) {
   state.step = n;
   $$('#sheetPost .step').forEach(s => s.classList.toggle('hidden', Number(s.dataset.step) !== n));
   $$('#sheetPost .step-bar').forEach((b, i) => { b.style.background = i < n ? 'var(--flare)' : '#fff'; });
   $('#stepLabel').textContent = STEP_LABELS[n];
   $('#stepBack').classList.toggle('hidden', n === 1);
-  $('#stepNext').textContent = n === 3 ? (state.draft?.editId ? '修正を保存' : '投稿する') : '次へ';
+  $('#stepNext').textContent = n === LAST_STEP ? (state.draft?.editId ? '修正を保存' : '投稿する') : '次へ';
   $('#sheetPost .sheet-body').scrollTop = 0;
-  if (n === 3) syncChips();
+  syncChips();
   updateNav();
 }
 function stepValid(n) {
   const d = state.draft;
   if (n === 1) return !!(d.latlng && d.category);
   if (n === 2) return $('#pTitle').value.trim().length > 0;
-  if (n === 3) return !!expiresAt() && expiresAt().getTime() > Date.now() + 5 * 60000;
+  if (n === 3) return !timeError();
   return true;
 }
 function updateNav() { if (state.draft) $('#stepNext').disabled = !stepValid(state.step); }
 $('#stepBack').addEventListener('click', () => goStep(Math.max(1, state.step - 1)));
 $('#stepNext').addEventListener('click', () => {
   if (!stepValid(state.step)) return;
-  if (state.step < 3) goStep(state.step + 1); else submitPost();
+  if (state.step < LAST_STEP) goStep(state.step + 1); else submitPost();
 });
 
 async function submitPost() {
   const d = state.draft;
-  const exp = expiresAt();
-  const conds = [d.ages.includes('誰でも') ? '誰でも歓迎' : d.ages.join('・') + '歓迎', d.gender, $('#condFree').value.trim()].filter(Boolean).join('／');
+  if (timeError()) { goStep(3); return; }
   const editing = !!d.editId;
+  const conds = [d.ages.includes('誰でも') ? '誰でも歓迎' : d.ages.join('・') + '歓迎', d.gender, $('#condFree').value.trim()].filter(Boolean).join('／');
+  const sns = readSnsInputs();
   const body = {
     action: editing ? 'updateEvent' : 'createEvent', token: state.auth?.token,
     id: d.editId || undefined,
     removeMedia: editing && d.removeMedia && !d.media,
     title: $('#pTitle').value.trim(), description: $('#pDesc').value.trim(),
     category: d.category, lat: d.latlng.lat, lng: d.latlng.lng,
-    expires_at: exp.toISOString(),
+    address: $('#pAddress').value.trim(),
+    start_at: readDT('#startAt').toISOString(),
+    end_at: readDT('#endAt').toISOString(),
+    expires_at: expiresAt().toISOString(),
     capacity: $('#capFree').value.trim() || d.capacity,
     fee: $('#feeFree').value.trim() || d.fee,
     conditions: conds,
+    sns,
     media: d.media ? { data: d.media.data, mimeType: d.media.mimeType } : null,
   };
   const msgs = [editing ? 'Geminiが修正内容をチェック中...' : 'Geminiが投稿をチェック中...', 'キャッチコピーを考えています...'];
@@ -1258,6 +1659,7 @@ async function submitPost() {
   try {
     const j = await apiPost(body);
     hideLoading();
+    try { localStorage.setItem(LS_SNS, JSON.stringify(sns)); } catch (_) {}
     state.draft = null; clearPickMarker(); closeSheets();
     state.events = [j.event, ...state.events.filter(x => x.id !== j.event.id)];
     state.filter = 'all'; renderFilters(); renderMarkers();
@@ -1296,7 +1698,6 @@ $('#btnRefresh').addEventListener('click', async () => {
   if (GAS_API_URL.includes('XXXX')) { toast('index.html の GAS_API_URL を設定してください', 6000); $('#countBadge').textContent = 'API未設定'; return; }
   locate(false).then(ll => { if (ll && !new URLSearchParams(location.search).get('e')) state.map.setView(ll, 14); });
 
-  // 保存済みログインの確認（ニックネーム変更・仮パスワード状態を反映）
   if (state.auth?.token) {
     apiPost({ action: 'me', token: state.auth.token })
       .then(j => {
@@ -1311,7 +1712,7 @@ $('#btnRefresh').addEventListener('click', async () => {
   if (eid) {
     const ev = state.events.find(x => x.id === eid);
     if (ev) { state.map.setView([ev.lat, ev.lng], 16); openDetail(eid); }
-    else { toast('この募集はもう終了しています'); history.replaceState(null, '', location.pathname); }
+    else { toast('このイベントは掲載が終了しています'); history.replaceState(null, '', location.pathname); }
   }
   setInterval(() => { if (!document.hidden) loadEvents(true); }, 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadEvents(true); });

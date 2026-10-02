@@ -12,18 +12,20 @@
  *   MODERATION_FAIL_OPEN  (任意) "true" で Gemini 障害時も投稿を通す（既定: 通さない）
  *   TRASH_MEDIA_ON_EXPIRE (任意) "false" で期限切れ時のDriveファイル削除を無効化
  *
- * 初回: setup() を一度実行 → ウェブアプリとしてデプロイ
+ * 初回・列追加時: setup() を実行 → ウェブアプリとしてデプロイ（新しいバージョン）
  */
 
 const CONFIG = {
   SHEET_EVENTS: 'events',
   SHEET_USERS: 'users',
-  SHEET_REQUESTS: 'requests',
+  SHEET_PARTICIPANTS: 'participants',
   GEMINI_MODEL_DEFAULT: 'gemini-3.8-flash',
   APP_URL_DEFAULT: 'https://kenken6291.github.io/ima-coco/',
   MAX_ACTIVE_POSTS_PER_USER: 5,
   MAX_MEDIA_BYTES: 20 * 1024 * 1024,
-  MAX_EXPIRE_HOURS: 72,
+  MAX_DAYS_AHEAD: 31,           // 何日先のイベントまで登録できるか
+  MAX_EVENT_DAYS: 14,           // 1イベントの最長開催期間
+  MAX_PEOPLE: 20,               // 参加表明1件あたりの最大人数
   TOKEN_TTL_DAYS: 90,
   LOGIN_MAX_FAIL: 5,
   LOGIN_LOCK_SEC: 900,          // 5回失敗で15分ロック
@@ -36,13 +38,16 @@ const CONFIG = {
 const EVENT_HEADERS = [
   'id', 'created_at', 'expires_at', 'title', 'category', 'icon', 'summary', 'description',
   'lat', 'lng', 'media_url', 'media_type', 'capacity', 'fee', 'conditions', 'user_id', 'status',
-  'hashtags', 'media_file_id'
+  'hashtags', 'media_file_id',
+  'start_at', 'end_at', 'address', 'pref', 'area', 'sns'
 ];
 const USER_HEADERS = [
   'user_id', 'nickname', 'email', 'pass_hash', 'salt', 'must_change',
   'token', 'token_expires', 'created_at', 'last_login', 'temp_issued_at'
 ];
-const REQUEST_HEADERS = ['id', 'event_id', 'user_id', 'nickname', 'message', 'created_at'];
+const PARTICIPANT_HEADERS = [
+  'id', 'event_id', 'user_id', 'nickname', 'people', 'message', 'added_by', 'created_at', 'updated_at'
+];
 
 const CATEGORIES = {
   camp: { label: 'キャンプ', icon: '⛺' },
@@ -57,6 +62,27 @@ const CATEGORIES = {
   sports: { label: 'スポーツ', icon: '⚽' },
   other: { label: 'その他', icon: '📍' },
 };
+
+const PREFS = ['',
+  '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
+  '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
+  '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県',
+  '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県',
+  '鳥取県', '島根県', '岡山県', '広島県', '山口県',
+  '徳島県', '香川県', '愛媛県', '高知県',
+  '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'];
+
+function areaOfPrefCode_(n) {
+  if (n === 1) return '北海道';
+  if (n <= 7) return '東北';
+  if (n <= 14) return '関東';
+  if (n <= 23) return '中部';
+  if (n <= 30) return '近畿';
+  if (n <= 35) return '中国';
+  if (n <= 39) return '四国';
+  if (n <= 47) return '九州・沖縄';
+  return 'その他';
+}
 
 /* =========================================================
  * 初期セットアップ
@@ -74,7 +100,7 @@ function setup() {
   }
   ensureSheet_(ss, CONFIG.SHEET_EVENTS, EVENT_HEADERS);
   ensureSheet_(ss, CONFIG.SHEET_USERS, USER_HEADERS);
-  ensureSheet_(ss, CONFIG.SHEET_REQUESTS, REQUEST_HEADERS);
+  ensureSheet_(ss, CONFIG.SHEET_PARTICIPANTS, PARTICIPANT_HEADERS);
 
   if (!props.getProperty('DRIVE_FOLDER_ID')) {
     const folder = DriveApp.createFolder('今CoCo_media');
@@ -139,6 +165,8 @@ function doGet(e) {
     switch (action) {
       case 'getEvents':
         return json_({ ok: true, events: getEvents_(), serverTime: new Date().toISOString() });
+      case 'geocode':
+        return json_({ ok: true, results: geocode_(p.q) });
       case 'ping':
         return json_({ ok: true, app: '今CoCo', time: new Date().toISOString() });
       default:
@@ -165,7 +193,11 @@ function doPost(e) {
       case 'createEvent': return json_(createEvent_(body));
       case 'updateEvent': return json_(updateEvent_(body));
       case 'deleteEvent': return json_(deleteEvent_(body));
-      case 'joinRequest': return json_(joinRequest_(body));
+      // 参加表明
+      case 'getParticipants': return json_(getParticipants_(body));
+      case 'saveParticipant': return json_(saveParticipant_(body));
+      case 'deleteParticipant': return json_(deleteParticipant_(body));
+      // マイページ
       case 'getMyData': return json_(getMyData_(body));
       default: return json_({ ok: false, error: '不明なactionです' });
     }
@@ -502,6 +534,9 @@ function updateNickname_(b) {
     }
     const u = users.find(x => String(x.user_id) === user.user_id);
     setFields_(sh, u._row, { nickname: nickname });
+    // 自分の参加表明の表示名もそろえる
+    const ps = sheet_(CONFIG.SHEET_PARTICIPANTS);
+    readAll_(ps).filter(r => String(r.user_id) === user.user_id).forEach(r => setFields_(ps, r._row, { nickname: nickname }));
     clearTokenCache_(token);
     clearEventsCache_();
     return { ok: true, user: { user_id: user.user_id, nickname: nickname, email: user.email } };
@@ -536,30 +571,40 @@ function getEvents_() {
 
   const now = Date.now();
   const users = userMap_();
-  const counts = requestCounts_();
+  const stats = participantStats_();
   const list = readAll_(sheet_(CONFIG.SHEET_EVENTS))
     .filter(r => r.id && String(r.status) === 'active' && ms_(r.expires_at) > now)
-    .map(r => publicEvent_(r, users, counts));
+    .map(r => publicEvent_(r, users, stats));
 
   try { cache.put('events_v1', JSON.stringify(list), CONFIG.EVENTS_CACHE_SEC); } catch (_) { /* 100KB超はキャッシュしない */ }
   return list;
 }
 
-function requestCounts_() {
-  const counts = {};
-  readAll_(sheet_(CONFIG.SHEET_REQUESTS)).forEach(r => {
+/** イベントごとの参加表明数 { event_id: { n: 件数, people: 人数合計 } } */
+function participantStats_(rows) {
+  const stats = {};
+  (rows || readAll_(sheet_(CONFIG.SHEET_PARTICIPANTS))).forEach(r => {
     const k = String(r.event_id);
-    counts[k] = (counts[k] || 0) + 1;
+    if (!stats[k]) stats[k] = { n: 0, people: 0 };
+    stats[k].n += 1;
+    stats[k].people += Number(r.people) || 1;
   });
-  return counts;
+  return stats;
 }
 
-function publicEvent_(r, users, counts) {
+function parseJson_(v, fallback) {
+  try { return v ? JSON.parse(String(v)) : fallback; } catch (_) { return fallback; }
+}
+
+function publicEvent_(r, users, stats) {
   const uid = String(r.user_id);
+  const st = (stats && stats[String(r.id)]) || { n: 0, people: 0 };
   return {
     id: String(r.id),
     created_at: iso_(r.created_at),
     expires_at: iso_(r.expires_at),
+    start_at: iso_(r.start_at) || iso_(r.created_at),
+    end_at: iso_(r.end_at) || iso_(r.expires_at),
     title: String(r.title),
     category: String(r.category),
     icon: String(r.icon),
@@ -567,25 +612,107 @@ function publicEvent_(r, users, counts) {
     description: String(r.description),
     lat: Number(r.lat),
     lng: Number(r.lng),
+    address: String(r.address || ''),
+    pref: String(r.pref || ''),
+    area: String(r.area || '') || 'その他',
     media_url: String(r.media_url || ''),
     media_type: String(r.media_type || ''),
     capacity: String(r.capacity || ''),
     fee: String(r.fee || ''),
     conditions: String(r.conditions || ''),
+    sns: parseJson_(r.sns, []),
     user_id: uid,
     nickname: (users && users[uid] && users[uid].nickname) || '名無しさん',
     status: String(r.status),
     hashtags: String(r.hashtags || '').split(/\s+/).filter(Boolean),
-    request_count: (counts && counts[String(r.id)]) || 0,
+    participant_n: st.n,
+    participant_count: st.people,
   };
 }
 
 /* =========================================================
- * 投稿作成（Geminiチェック → Driveアップロード → シート追記）
+ * 住所 ⇔ 緯度経度（国土地理院API）
  * ========================================================= */
-/** 投稿内容の入力チェック（新規・修正で共通） */
+/** 住所検索（クライアントから直接呼べない場合の予備） */
+function geocode_(q) {
+  q = clean_(q, 100);
+  if (!q) throw apiError_('住所を入力してください');
+  const res = UrlFetchApp.fetch('https://msearch.gsi.go.jp/address-search/AddressSearch?q=' + encodeURIComponent(q), { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw apiError_('住所検索に失敗しました');
+  const arr = parseJson_(res.getContentText(), []) || [];
+  return arr.slice(0, 5).map(x => ({
+    title: String((x.properties && x.properties.title) || ''),
+    lat: Number(x.geometry.coordinates[1]),
+    lng: Number(x.geometry.coordinates[0]),
+  }));
+}
+
+/** 緯度経度 → 都道府県・エリア・町名 */
+function reverseGeo_(lat, lng) {
+  const out = { pref: '', area: 'その他', town: '' };
+  const ck = 'rg_' + lat.toFixed(3) + '_' + lng.toFixed(3);
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(ck);
+  if (hit) return JSON.parse(hit);
+  try {
+    const res = UrlFetchApp.fetch('https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=' + lat + '&lon=' + lng, { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return out;
+    const r = (parseJson_(res.getContentText(), {}) || {}).results;
+    if (r && r.muniCd) {
+      const code = Number(String(r.muniCd).padStart(5, '0').slice(0, 2));
+      if (code >= 1 && code <= 47) { out.pref = PREFS[code]; out.area = areaOfPrefCode_(code); }
+      out.town = String(r.lv01Nm || '').replace(/^[-－]$/, '');
+    }
+    cache.put(ck, JSON.stringify(out), 21600);
+  } catch (_) {}
+  return out;
+}
+
+/* =========================================================
+ * 連絡先SNS（任意）
+ * ========================================================= */
+function normalizeSns_(s) {
+  s = s || {};
+  const out = [];
+  const handle = (v, re) => String(v).replace(re, '').replace(/^@/, '').split(/[/?#]/)[0];
+
+  const x = clean_(s.x, 200);
+  if (x) {
+    const h = handle(x, /^https?:\/\/(www\.)?(x|twitter)\.com\//i);
+    if (!/^[A-Za-z0-9_]{1,15}$/.test(h)) throw apiError_('XのユーザーIDが正しくありません（英数字と_、15文字まで）');
+    out.push({ type: 'x', label: '@' + h, url: 'https://x.com/' + h });
+  }
+  const ig = clean_(s.instagram, 200);
+  if (ig) {
+    const h = handle(ig, /^https?:\/\/(www\.)?instagram\.com\//i);
+    if (!/^[A-Za-z0-9_.]{1,30}$/.test(h)) throw apiError_('InstagramのユーザーIDが正しくありません');
+    out.push({ type: 'instagram', label: '@' + h, url: 'https://www.instagram.com/' + h + '/' });
+  }
+  const line = clean_(s.line, 200);
+  if (line) {
+    if (!/^https:\/\/(line\.me|lin\.ee|page\.line\.me|liff\.line\.me)\/[^\s<>"]*$/i.test(line)) throw apiError_('LINEは https://line.me/… などのURLを入力してください');
+    out.push({ type: 'line', label: 'LINE', url: line });
+  }
+  const fb = clean_(s.facebook, 200);
+  if (fb) {
+    if (!/^https:\/\/(www\.|m\.)?(facebook\.com|fb\.me)\/[^\s<>"]+$/i.test(fb)) throw apiError_('Facebookは https://www.facebook.com/… のURLを入力してください');
+    out.push({ type: 'facebook', label: 'Facebook', url: fb });
+  }
+  const other = clean_(s.other, 200);
+  if (other) {
+    if (!/^https:\/\/[^\s<>"]+\.[^\s<>"]+$/i.test(other)) throw apiError_('その他の連絡先は https:// から始まるURLを入力してください');
+    const host = (other.match(/^https:\/\/([^/?#]+)/i) || [])[1] || 'リンク';
+    out.push({ type: 'other', label: host, url: other });
+  }
+  return out;
+}
+
+/* =========================================================
+ * 投稿内容のチェック（新規・修正で共通）
+ * ========================================================= */
 function parseEventInput_(b) {
   const now = Date.now();
+  const DAY = 86400000;
   const p = {
     title: clean_(b.title, 40),
     description: clean_(b.description, 500),
@@ -595,12 +722,22 @@ function parseEventInput_(b) {
     conditions: clean_(b.conditions, 100) || '誰でも歓迎',
     lat: Number(b.lat),
     lng: Number(b.lng),
+    address: clean_(b.address, 100),
+    startMs: Date.parse(String(b.start_at || '')),
+    endMs: Date.parse(String(b.end_at || '')),
     expMs: Date.parse(String(b.expires_at || '')),
+    sns: normalizeSns_(b.sns),
   };
   if (!p.title) throw apiError_('タイトルを入力してください');
   if (!isFinite(p.lat) || !isFinite(p.lng) || Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180) throw apiError_('場所が正しくありません');
-  if (isNaN(p.expMs) || p.expMs <= now + 5 * 60000) throw apiError_('終了時刻は5分以上先にしてください');
-  if (p.expMs > now + CONFIG.MAX_EXPIRE_HOURS * 3600000) throw apiError_('終了時刻は' + CONFIG.MAX_EXPIRE_HOURS + '時間以内にしてください');
+  if (isNaN(p.startMs) || isNaN(p.endMs)) throw apiError_('開催日時（開始・終了）を入力してください');
+  if (p.endMs <= p.startMs) throw apiError_('終了日時は開始日時より後にしてください');
+  if (p.endMs - p.startMs > CONFIG.MAX_EVENT_DAYS * DAY) throw apiError_('開催期間は' + CONFIG.MAX_EVENT_DAYS + '日以内にしてください');
+  if (p.endMs <= now) throw apiError_('終了日時が過ぎています');
+  if (p.startMs > now + CONFIG.MAX_DAYS_AHEAD * DAY) throw apiError_(CONFIG.MAX_DAYS_AHEAD + '日以内に始まるイベントにしてください');
+  if (isNaN(p.expMs) || p.expMs <= now + 5 * 60000) throw apiError_('表示期限は5分以上先にしてください');
+  if (p.expMs > now + (CONFIG.MAX_DAYS_AHEAD + CONFIG.MAX_EVENT_DAYS) * DAY) throw apiError_('表示期限が長すぎます');
+  if (p.startMs > now && p.expMs < p.startMs) throw apiError_('表示期限が開催開始より前になっています');
   return p;
 }
 
@@ -613,10 +750,45 @@ function mediaInput_(b) {
   return media;
 }
 
+/** シートに書く項目（新規・修正で共通） */
+function eventFields_(p, ai, geo) {
+  return {
+    title: p.title,
+    description: p.description,
+    category: p.category,
+    icon: ai.emoji || CATEGORIES[p.category].icon,
+    summary: ai.summary || p.title.slice(0, 15),
+    lat: p.lat.toFixed(6),
+    lng: p.lng.toFixed(6),
+    start_at: new Date(p.startMs).toISOString(),
+    end_at: new Date(p.endMs).toISOString(),
+    expires_at: new Date(p.expMs).toISOString(),
+    capacity: p.capacity,
+    fee: p.fee,
+    conditions: p.conditions,
+    hashtags: (ai.hashtags || []).join(' '),
+    address: p.address || [geo.pref, geo.town].filter(Boolean).join(' '),
+    pref: geo.pref,
+    area: geo.area,
+    sns: JSON.stringify(p.sns || []),
+  };
+}
+
+function reviewInput_(p, media) {
+  return {
+    title: p.title, description: p.description, category: p.category,
+    capacity: p.capacity, fee: p.fee, conditions: p.conditions,
+    address: p.address, sns: (p.sns || []).map(x => x.url).join(' '),
+    media: media,
+  };
+}
+
+/* =========================================================
+ * 投稿作成（Geminiチェック → Driveアップロード → シート追記）
+ * ========================================================= */
 function createEvent_(b) {
   const user = authUser_(b.token);
   const p = parseEventInput_(b);
-  const { title, description, category, capacity, fee, conditions, lat, lng, expMs } = p;
   const now = Date.now();
 
   // 同時公開数の上限
@@ -629,46 +801,278 @@ function createEvent_(b) {
   const media = mediaInput_(b);
 
   // 1) Gemini モデレーション & 生成
-  const ai = geminiReview_({ title, description, category, capacity, fee, conditions, media });
+  const ai = geminiReview_(reviewInput_(p, media));
   if (!ai.safe) {
     return { ok: false, moderation: true, error: 'この内容は投稿できません：' + (ai.reason || 'ガイドラインに抵触する可能性があります') };
   }
 
-  // 2) Drive アップロード
+  // 2) エリア判定・Drive アップロード
+  const geo = reverseGeo_(p.lat, p.lng);
   const id = Utilities.getUuid();
   let up = { url: '', type: '', id: '' };
   if (media) up = uploadMedia_(media, id);
 
   // 3) シート追記（失敗時はアップロードを取り消し）
-  const row = {
+  const row = Object.assign({
     id: id,
     created_at: new Date(now).toISOString(),
-    expires_at: new Date(expMs).toISOString(),
-    title: title,
-    category: category,
-    icon: ai.emoji || CATEGORIES[category].icon,
-    summary: ai.summary || title.slice(0, 15),
-    description: description,
-    lat: lat.toFixed(6),
-    lng: lng.toFixed(6),
-    media_url: up.url,
-    media_type: up.type,
-    capacity: capacity,
-    fee: fee,
-    conditions: conditions,
     user_id: user.user_id,
     status: 'active',
-    hashtags: (ai.hashtags || []).join(' '),
+    media_url: up.url,
+    media_type: up.type,
     media_file_id: up.id,
-  };
+  }, eventFields_(p, ai, geo));
   try {
     withLock_(() => { appendObj_(sheet_(CONFIG.SHEET_EVENTS), row); });
   } catch (err) {
-    if (up.id) { try { DriveApp.getFileById(up.id).setTrashed(true); } catch (_) {} }
+    if (up.id) trashMedia_(up.id);
     throw apiError_('保存に失敗しました。もう一度お試しください');
   }
   clearEventsCache_();
   return { ok: true, event: publicEvent_(row, { [user.user_id]: { nickname: user.nickname } }, {}) };
+}
+
+/* =========================================================
+ * 投稿の修正（本人のみ・公開中のみ）
+ *   media: 新しい写真/動画（差し替え） / removeMedia: true で外す
+ * ========================================================= */
+function updateEvent_(b) {
+  const user = authUser_(b.token);
+  const id = String(b.id || '');
+  const findEv_ = () => readAll_(sheet_(CONFIG.SHEET_EVENTS)).find(r => String(r.id) === id);
+  const checkOwner_ = ev => {
+    if (!ev) throw apiError_('投稿が見つかりません');
+    if (String(ev.user_id) !== user.user_id) throw apiError_('自分の投稿だけ修正できます');
+    if (String(ev.status) !== 'active' || ms_(ev.expires_at) <= Date.now()) throw apiError_('終了した投稿は修正できません');
+  };
+  checkOwner_(findEv_());
+
+  const p = parseEventInput_(b);
+  const media = mediaInput_(b);
+  const removeMedia = b.removeMedia === true && !media;
+
+  const ai = geminiReview_(reviewInput_(p, media));
+  if (!ai.safe) {
+    return { ok: false, moderation: true, error: 'この内容には修正できません：' + (ai.reason || 'ガイドラインに抵触する可能性があります') };
+  }
+
+  const geo = reverseGeo_(p.lat, p.lng);
+  let up = null;
+  if (media) up = uploadMedia_(media, id + '_' + Date.now());
+
+  let oldFileId = '';
+  let saved;
+  try {
+    saved = withLock_(() => {
+      const sh = sheet_(CONFIG.SHEET_EVENTS);
+      const ev = findEv_();
+      checkOwner_(ev);
+      oldFileId = String(ev.media_file_id || '');
+      const fields = eventFields_(p, ai, geo);
+      if (up) {
+        fields.media_url = up.url; fields.media_type = up.type; fields.media_file_id = up.id;
+      } else if (removeMedia) {
+        fields.media_url = ''; fields.media_type = ''; fields.media_file_id = '';
+      }
+      setFields_(sh, ev._row, fields);
+      return Object.assign({}, ev, fields);
+    });
+  } catch (err) {
+    if (up) trashMedia_(up.id);
+    throw err;
+  }
+
+  if ((up || removeMedia) && oldFileId) trashMedia_(oldFileId);
+  clearEventsCache_();
+  return { ok: true, event: publicEvent_(saved, { [user.user_id]: { nickname: user.nickname } }, participantStats_()) };
+}
+
+/* =========================================================
+ * 投稿削除
+ * ========================================================= */
+function deleteEvent_(b) {
+  const user = authUser_(b.token);
+  const id = String(b.id || '');
+  const fileId = withLock_(() => {
+    const sh = sheet_(CONFIG.SHEET_EVENTS);
+    const ev = readAll_(sh).find(r => String(r.id) === id);
+    if (!ev) throw apiError_('投稿が見つかりません');
+    if (String(ev.user_id) !== user.user_id) throw apiError_('自分の投稿だけ削除できます');
+    if (String(ev.status) !== 'active') throw apiError_('この投稿はすでに終了しています');
+    setFields_(sh, ev._row, { status: 'cancelled' });
+    return String(ev.media_file_id || '');
+  });
+  trashMedia_(fileId);
+  clearEventsCache_();
+  return { ok: true };
+}
+
+/* =========================================================
+ * 参加表明
+ *   参加者リストは「主催者」と「参加表明した人」だけが見られる
+ *   閲覧者には人数だけを公開（getEvents の participant_count）
+ * ========================================================= */
+function partPublic_(r, user) {
+  return {
+    id: String(r.id),
+    nickname: String(r.nickname),
+    people: Number(r.people) || 1,
+    message: String(r.message || ''),
+    added_by: String(r.added_by || 'self'),
+    created_at: iso_(r.created_at),
+    mine: String(r.user_id) === user.user_id,
+  };
+}
+
+function participantsView_(user, ev, allRows) {
+  const rows = allRows
+    .filter(r => String(r.event_id) === String(ev.id))
+    .sort((a, b) => (iso_(a.created_at) < iso_(b.created_at) ? -1 : 1));
+  const isOwner = String(ev.user_id) === user.user_id;
+  const meRow = rows.find(r => String(r.user_id) === user.user_id);
+  const allowed = isOwner || !!meRow;
+  return {
+    ok: true,
+    event_id: String(ev.id),
+    isOwner: isOwner,
+    joined: !!meRow,
+    me: meRow ? partPublic_(meRow, user) : null,
+    list: allowed ? rows.map(r => partPublic_(r, user)) : null,
+    n: rows.length,
+    count: rows.reduce((a, r) => a + (Number(r.people) || 1), 0),
+  };
+}
+
+function findEvent_(eventId) {
+  const ev = readAll_(sheet_(CONFIG.SHEET_EVENTS)).find(r => String(r.id) === String(eventId));
+  if (!ev) throw apiError_('イベントが見つかりません');
+  return ev;
+}
+
+function getParticipants_(b) {
+  const user = authUser_(b.token);
+  const ev = findEvent_(b.event_id);
+  return participantsView_(user, ev, readAll_(sheet_(CONFIG.SHEET_PARTICIPANTS)));
+}
+
+/**
+ * 参加表明の登録・更新
+ *   pid なし・asOwner なし → 自分の参加表明（あれば更新）
+ *   pid なし・asOwner      → 主催者が参加者を追加（会員以外もOK）
+ *   pid あり               → 主催者は全員、本人は自分の分を編集
+ */
+function saveParticipant_(b) {
+  const user = authUser_(b.token);
+  const eventId = String(b.event_id || '');
+  const people = Math.max(1, Math.min(CONFIG.MAX_PEOPLE, Math.floor(Number(b.people) || 1)));
+  const message = clean_(b.message, 140);
+  return withLock_(() => {
+    const ev = findEvent_(eventId);
+    if (String(ev.status) !== 'active' || ms_(ev.expires_at) <= Date.now()) throw apiError_('このイベントは掲載が終了しています');
+    const isOwner = String(ev.user_id) === user.user_id;
+    const sh = sheet_(CONFIG.SHEET_PARTICIPANTS);
+    const rows = readAll_(sh);
+    const now = new Date().toISOString();
+
+    if (b.pid) {
+      const r = rows.find(x => String(x.id) === String(b.pid) && String(x.event_id) === eventId);
+      if (!r) throw apiError_('参加者が見つかりません');
+      const own = String(r.user_id) === user.user_id;
+      if (!isOwner && !own) throw apiError_('この参加者は編集できません');
+      const f = { people: people, message: message, updated_at: now };
+      if (isOwner) {
+        const nn = clean_(b.nickname, 20);
+        if (nn) f.nickname = nn;
+      }
+      setFields_(sh, r._row, f);
+    } else if (b.asOwner) {
+      if (!isOwner) throw apiError_('参加者を追加できるのは主催者だけです');
+      const nn = clean_(b.nickname, 20);
+      if (!nn) throw apiError_('参加者の名前を入力してください');
+      appendObj_(sh, {
+        id: Utilities.getUuid(), event_id: eventId, user_id: '', nickname: nn,
+        people: people, message: message, added_by: 'owner', created_at: now, updated_at: now,
+      });
+    } else {
+      if (isOwner) throw apiError_('主催者は自分のイベントに参加表明できません（参加者の追加を使ってください）');
+      if (ms_(ev.end_at || ev.expires_at) <= Date.now()) throw apiError_('このイベントは終了しています');
+      const mine = rows.find(x => String(x.event_id) === eventId && String(x.user_id) === user.user_id);
+      if (mine) {
+        setFields_(sh, mine._row, { people: people, message: message, nickname: user.nickname, updated_at: now });
+      } else {
+        appendObj_(sh, {
+          id: Utilities.getUuid(), event_id: eventId, user_id: user.user_id, nickname: user.nickname,
+          people: people, message: message, added_by: 'self', created_at: now, updated_at: now,
+        });
+      }
+    }
+    clearEventsCache_();
+    return participantsView_(user, ev, readAll_(sh));
+  });
+}
+
+/** 参加表明の削除（主催者は全員、本人は自分の分＝取り消し） */
+function deleteParticipant_(b) {
+  const user = authUser_(b.token);
+  const eventId = String(b.event_id || '');
+  return withLock_(() => {
+    const ev = findEvent_(eventId);
+    const isOwner = String(ev.user_id) === user.user_id;
+    const sh = sheet_(CONFIG.SHEET_PARTICIPANTS);
+    const r = readAll_(sh).find(x => String(x.id) === String(b.pid) && String(x.event_id) === eventId);
+    if (!r) throw apiError_('参加者が見つかりません');
+    if (!isOwner && String(r.user_id) !== user.user_id) throw apiError_('この参加者は削除できません');
+    sh.deleteRow(r._row);
+    clearEventsCache_();
+    return participantsView_(user, ev, readAll_(sh));
+  });
+}
+
+/* =========================================================
+ * マイページ
+ * ========================================================= */
+function getMyData_(b) {
+  const user = authUser_(b.token);
+  const now = Date.now();
+  const events = readAll_(sheet_(CONFIG.SHEET_EVENTS));
+  const parts = readAll_(sheet_(CONFIG.SHEET_PARTICIPANTS));
+  const stats = participantStats_(parts);
+  const me = { [user.user_id]: { nickname: user.nickname } };
+
+  const myEvents = events
+    .filter(r => String(r.user_id) === user.user_id && String(r.status) === 'active' && ms_(r.expires_at) > now)
+    .map(r => {
+      const ev = publicEvent_(r, me, stats);
+      ev.participants = participantsView_(user, r, parts).list || [];
+      return ev;
+    })
+    .sort((a, b2) => (a.start_at < b2.start_at ? -1 : 1));
+
+  const evMap = {};
+  events.forEach(r => { evMap[String(r.id)] = r; });
+  const joined = parts
+    .filter(q => String(q.user_id) === user.user_id)
+    .map(q => {
+      const ev = evMap[String(q.event_id)];
+      const alive = ev && String(ev.status) === 'active' && ms_(ev.expires_at) > now;
+      return {
+        event_id: String(q.event_id),
+        title: ev ? String(ev.title) : '（削除されたイベント）',
+        icon: ev ? String(ev.icon) : '📍',
+        start_at: ev ? (iso_(ev.start_at) || iso_(ev.created_at)) : '',
+        active: !!alive,
+        people: Number(q.people) || 1,
+      };
+    })
+    .sort((a, b2) => (a.start_at < b2.start_at ? -1 : 1))
+    .slice(0, 50);
+
+  return {
+    ok: true,
+    user: { user_id: user.user_id, nickname: user.nickname, email: user.email },
+    myEvents: myEvents,
+    joinedEvents: joined,
+  };
 }
 
 /* =========================================================
@@ -685,6 +1089,7 @@ function geminiReview_(p) {
   const post = {
     タイトル: p.title, カテゴリ: (CATEGORIES[p.category] || {}).label,
     本文: p.description, 募集人数: p.capacity, 参加費: p.fee, 参加条件: p.conditions,
+    場所: p.address || '', 連絡先URL: p.sns || '',
   };
   const prompt = [
     'あなたは、今いる場所で遊んでいる様子を地図で共有し、仲間を募る公開アプリ「今CoCo」のモデレーター兼コピーライターです。',
@@ -826,172 +1231,6 @@ function uploadMedia_(m, eventId) {
 function trashMedia_(fileId) {
   if (!fileId) return;
   try { DriveApp.getFileById(String(fileId)).setTrashed(true); } catch (_) {}
-}
-
-/* =========================================================
- * 投稿の修正（本人のみ・公開中のみ）
- *   media: 新しい写真/動画（差し替え）
- *   removeMedia: true で写真/動画を外す
- *   どちらも無ければ今の写真/動画をそのまま使う
- * ========================================================= */
-function updateEvent_(b) {
-  const user = authUser_(b.token);
-  const id = String(b.id || '');
-  const findEv_ = () => readAll_(sheet_(CONFIG.SHEET_EVENTS)).find(r => String(r.id) === id);
-  const checkOwner_ = ev => {
-    if (!ev) throw apiError_('投稿が見つかりません');
-    if (String(ev.user_id) !== user.user_id) throw apiError_('自分の投稿だけ修正できます');
-    if (String(ev.status) !== 'active' || ms_(ev.expires_at) <= Date.now()) throw apiError_('終了した投稿は修正できません');
-  };
-  checkOwner_(findEv_());
-
-  const p = parseEventInput_(b);
-  const media = mediaInput_(b);
-  const removeMedia = b.removeMedia === true && !media;
-
-  // 1) Gemini で修正後の内容をチェック（キャッチコピー・絵文字・タグも作り直し）
-  const ai = geminiReview_({
-    title: p.title, description: p.description, category: p.category,
-    capacity: p.capacity, fee: p.fee, conditions: p.conditions, media: media,
-  });
-  if (!ai.safe) {
-    return { ok: false, moderation: true, error: 'この内容には修正できません：' + (ai.reason || 'ガイドラインに抵触する可能性があります') };
-  }
-
-  // 2) 新しい写真/動画のアップロード
-  let up = null;
-  if (media) up = uploadMedia_(media, id + '_' + Date.now());
-
-  // 3) シート更新
-  let oldFileId = '';
-  let saved;
-  try {
-    saved = withLock_(() => {
-      const sh = sheet_(CONFIG.SHEET_EVENTS);
-      const ev = findEv_();
-      checkOwner_(ev);
-      oldFileId = String(ev.media_file_id || '');
-      const fields = {
-        title: p.title,
-        description: p.description,
-        category: p.category,
-        icon: ai.emoji || CATEGORIES[p.category].icon,
-        summary: ai.summary || p.title.slice(0, 15),
-        lat: p.lat.toFixed(6),
-        lng: p.lng.toFixed(6),
-        expires_at: new Date(p.expMs).toISOString(),
-        capacity: p.capacity,
-        fee: p.fee,
-        conditions: p.conditions,
-        hashtags: (ai.hashtags || []).join(' '),
-      };
-      if (up) {
-        fields.media_url = up.url; fields.media_type = up.type; fields.media_file_id = up.id;
-      } else if (removeMedia) {
-        fields.media_url = ''; fields.media_type = ''; fields.media_file_id = '';
-      }
-      setFields_(sh, ev._row, fields);
-      return Object.assign({}, ev, fields);
-    });
-  } catch (err) {
-    if (up) trashMedia_(up.id);
-    throw err;
-  }
-
-  // 差し替え・削除した古いファイルはゴミ箱へ
-  if ((up || removeMedia) && oldFileId) trashMedia_(oldFileId);
-  clearEventsCache_();
-  return { ok: true, event: publicEvent_(saved, { [user.user_id]: { nickname: user.nickname } }, requestCounts_()) };
-}
-
-/* =========================================================
- * 投稿削除（早期終了）
- * ========================================================= */
-function deleteEvent_(b) {
-  const user = authUser_(b.token);
-  const id = String(b.id || '');
-  const fileId = withLock_(() => {
-    const sh = sheet_(CONFIG.SHEET_EVENTS);
-    const ev = readAll_(sh).find(r => String(r.id) === id);
-    if (!ev) throw apiError_('投稿が見つかりません');
-    if (String(ev.user_id) !== user.user_id) throw apiError_('自分の投稿だけ削除できます');
-    if (String(ev.status) !== 'active') throw apiError_('この投稿はすでに終了しています');
-    setFields_(sh, ev._row, { status: 'cancelled' });
-    return String(ev.media_file_id || '');
-  });
-  trashMedia_(fileId);
-  clearEventsCache_();
-  return { ok: true };
-}
-
-/* =========================================================
- * 参加リクエスト
- * ========================================================= */
-function joinRequest_(b) {
-  const user = authUser_(b.token);
-  const eventId = String(b.id || '');
-  const message = clean_(b.message, 140) || '参加したいです！';
-  return withLock_(() => {
-    const ev = readAll_(sheet_(CONFIG.SHEET_EVENTS)).find(r => String(r.id) === eventId);
-    if (!ev || String(ev.status) !== 'active' || ms_(ev.expires_at) <= Date.now()) throw apiError_('この募集は終了しています');
-    if (String(ev.user_id) === user.user_id) throw apiError_('自分の投稿には参加リクエストできません');
-    const sh = sheet_(CONFIG.SHEET_REQUESTS);
-    const dup = readAll_(sh).some(r => String(r.event_id) === eventId && String(r.user_id) === user.user_id);
-    if (dup) throw apiError_('すでに参加リクエスト済みです');
-    appendObj_(sh, {
-      id: Utilities.getUuid(), event_id: eventId, user_id: user.user_id,
-      nickname: user.nickname, message: message, created_at: new Date().toISOString(),
-    });
-    clearEventsCache_();
-    return { ok: true };
-  });
-}
-
-/* =========================================================
- * マイページ
- * ========================================================= */
-function getMyData_(b) {
-  const user = authUser_(b.token);
-  const now = Date.now();
-  const events = readAll_(sheet_(CONFIG.SHEET_EVENTS));
-  const requests = readAll_(sheet_(CONFIG.SHEET_REQUESTS));
-  const counts = {};
-  requests.forEach(r => { counts[String(r.event_id)] = (counts[String(r.event_id)] || 0) + 1; });
-
-  const myEvents = events
-    .filter(r => String(r.user_id) === user.user_id && String(r.status) === 'active' && ms_(r.expires_at) > now)
-    .map(r => {
-      const ev = publicEvent_(r, { [user.user_id]: { nickname: user.nickname } }, counts);
-      ev.requests = requests
-        .filter(q => String(q.event_id) === ev.id)
-        .map(q => ({ nickname: String(q.nickname), message: String(q.message), created_at: iso_(q.created_at) }));
-      return ev;
-    });
-
-  const evMap = {};
-  events.forEach(r => { evMap[String(r.id)] = r; });
-  const sent = requests
-    .filter(q => String(q.user_id) === user.user_id)
-    .map(q => {
-      const ev = evMap[String(q.event_id)];
-      const alive = ev && String(ev.status) === 'active' && ms_(ev.expires_at) > now;
-      return {
-        event_id: String(q.event_id),
-        title: ev ? String(ev.title) : '（削除された投稿）',
-        icon: ev ? String(ev.icon) : '📍',
-        active: !!alive,
-        created_at: iso_(q.created_at),
-      };
-    })
-    .sort((a, b2) => (a.created_at < b2.created_at ? 1 : -1))
-    .slice(0, 30);
-
-  return {
-    ok: true,
-    user: { user_id: user.user_id, nickname: user.nickname, email: user.email },
-    myEvents: myEvents,
-    sentRequests: sent,
-  };
 }
 
 /* =========================================================
