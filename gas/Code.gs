@@ -39,7 +39,7 @@ const EVENT_HEADERS = [
   'id', 'created_at', 'expires_at', 'title', 'category', 'icon', 'summary', 'description',
   'lat', 'lng', 'media_url', 'media_type', 'capacity', 'fee', 'conditions', 'user_id', 'status',
   'hashtags', 'media_file_id',
-  'start_at', 'end_at', 'address', 'pref', 'area', 'sns'
+  'start_at', 'end_at', 'address', 'pref', 'area', 'sns', 'join_method'
 ];
 const USER_HEADERS = [
   'user_id', 'nickname', 'email', 'pass_hash', 'salt', 'must_change',
@@ -625,6 +625,7 @@ function publicEvent_(r, users, stats) {
     fee: String(r.fee || ''),
     conditions: String(r.conditions || ''),
     sns: parseJson_(r.sns, []),
+    join_method: String(r.join_method || '') === 'direct' ? 'direct' : 'app',
     user_id: uid,
     nickname: (users && users[uid] && users[uid].nickname) || '名無しさん',
     status: String(r.status),
@@ -731,6 +732,7 @@ function parseEventInput_(b) {
     endMs: Date.parse(String(b.end_at || '')),
     expMs: Date.parse(String(b.expires_at || '')),
     sns: normalizeSns_(b.sns),
+    joinMethod: b.join_method === 'direct' ? 'direct' : 'app',
   };
   if (!p.title) throw apiError_('タイトルを入力してください');
   if (!isFinite(p.lat) || !isFinite(p.lng) || Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180) throw apiError_('場所が正しくありません');
@@ -742,6 +744,7 @@ function parseEventInput_(b) {
   if (isNaN(p.expMs) || p.expMs <= now + 5 * 60000) throw apiError_('表示期限は5分以上先にしてください');
   if (p.expMs > now + (CONFIG.MAX_DAYS_AHEAD + CONFIG.MAX_EVENT_DAYS) * DAY) throw apiError_('表示期限が長すぎます');
   if (p.startMs > now && p.expMs < p.startMs) throw apiError_('表示期限が開催開始より前になっています');
+  if (p.joinMethod === 'direct' && !p.sns.length) throw apiError_('「主催者に直接申し込み」にする場合は、連絡先SNSを1つ以上入力してください');
   return p;
 }
 
@@ -775,6 +778,7 @@ function eventFields_(p, ai, geo) {
     pref: geo.pref,
     area: geo.area,
     sns: JSON.stringify(p.sns || []),
+    join_method: p.joinMethod,
   };
 }
 
@@ -999,6 +1003,8 @@ function saveParticipant_(b) {
       });
     } else {
       if (isOwner) throw apiError_('主催者は自分のイベントに参加表明できません（参加者の追加を使ってください）');
+      const mineNow = rows.find(x => String(x.event_id) === eventId && String(x.user_id) === user.user_id);
+      if (String(ev.join_method) === 'direct' && !mineNow) throw apiError_('このイベントの参加表明は、主催者に直接申し込んでください');
       if (ms_(ev.end_at || ev.expires_at) <= Date.now()) throw apiError_('このイベントは終了しています');
       const mine = rows.find(x => String(x.event_id) === eventId && String(x.user_id) === user.user_id);
       if (mine) {

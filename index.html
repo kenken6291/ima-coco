@@ -365,6 +365,13 @@
 
     <!-- STEP 4 募集・連絡先 -->
     <div class="step hidden" data-step="4">
+      <span class="label">参加の受け付け方</span>
+      <div id="joinChips" class="flex flex-wrap gap-2 mb-2">
+        <button class="chip" data-join="app">アプリで参加表明を受け付ける</button>
+        <button class="chip" data-join="direct">主催者に直接申し込んでもらう</button>
+      </div>
+      <p id="joinHint" class="text-xs text-ink/60 mb-5"></p>
+
       <span class="label">募集人数</span>
       <div id="capChips" class="flex flex-wrap gap-2 mb-2">
         <button class="chip" data-v="あと1人">あと1人</button>
@@ -411,6 +418,7 @@
       <div class="sns-row"><i class="fa-brands fa-line"></i><input id="snsLine" class="field field-sm" maxlength="200" placeholder="LINEのURL（https://line.me/…）" inputmode="url"></div>
       <div class="sns-row"><i class="fa-brands fa-facebook"></i><input id="snsFb" class="field field-sm" maxlength="200" placeholder="FacebookのURL" inputmode="url"></div>
       <div class="sns-row"><i class="fa-solid fa-link"></i><input id="snsOther" class="field field-sm" maxlength="200" placeholder="その他のURL（https://…）" inputmode="url"></div>
+      <p id="snsErr" class="form-err"></p>
       <p class="text-xs text-ink/60 mt-3 mb-4">投稿はGeminiが内容をチェックしてから地図に載ります。</p>
     </div>
   </div>
@@ -804,6 +812,7 @@ function openDetail(id) {
   const c = CAT[ev.category] || CAT.other;
   const mine = state.auth?.user?.user_id === ev.user_id;
   const st = evStatus(ev);
+  const direct = ev.join_method === 'direct';
 
   let media = '';
   if (ev.media_url && ev.media_type === 'image') {
@@ -814,7 +823,7 @@ function openDetail(id) {
   const sns = (ev.sns || []).filter(s => /^https:\/\//.test(s.url));
   const snsHtml = sns.length ? `
       <div class="mt-4">
-        <p class="label mb-2"><i class="fa-solid fa-comment-dots mr-1"></i>主催者に連絡</p>
+        <p class="label mb-2" id="snsBox"><i class="fa-solid fa-comment-dots mr-1"></i>${direct ? '主催者に連絡（参加の申し込みはこちら）' : '主催者に連絡'}</p>
         <div class="flex flex-wrap gap-2">${sns.map(s => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" class="sticker bg-white rounded-full px-3 py-2 text-sm font-bold inline-flex items-center gap-1.5"><i class="${SNS_ICONS[s.type] || SNS_ICONS.other}"></i>${esc(s.label)}</a>`).join('')}</div>
         <p class="text-[11px] text-ink/50 mt-1.5">各SNSのページが開きます。やりとりはSNS上で行われます。</p>
       </div>` : '';
@@ -856,6 +865,7 @@ function openDetail(id) {
         <div class="border-2 border-ink rounded-xl py-2 bg-sun"><p class="text-[11px] font-bold text-ink/60">参加表明</p><p class="font-bold text-sm"><span class="part-count">${ev.participant_count || 0}</span>人</p></div>
       </div>
       ${ev.conditions ? `<p class="mt-3 text-sm"><i class="fa-solid fa-user-check mr-1 text-mint"></i><span class="font-bold">条件：</span>${esc(ev.conditions)}</p>` : ''}
+      ${direct ? `<div class="mt-3 bg-sun border-2 border-ink rounded-xl px-3 py-2 text-sm font-bold"><i class="fa-solid fa-bullhorn mr-1"></i>参加表明は主催者に直接申し込んでください</div>` : ''}
       ${ev.description ? `<p class="mt-3 whitespace-pre-wrap break-words leading-relaxed">${esc(ev.description)}</p>` : ''}
       ${ev.hashtags?.length ? `<p class="mt-3 flex flex-wrap gap-1.5">${ev.hashtags.map(t => `<span class="text-xs font-bold bg-sky border border-ink/30 rounded-full px-2 py-0.5">${esc(t)}</span>`).join('')}</p>` : ''}
       ${snsHtml}
@@ -959,6 +969,14 @@ function partListHtml(list, owner) {
 function renderParts(ev) {
   const box = $('#partArea'); if (!box) return;
   const ended = evStatus(ev).key === 'ended';
+  const direct = ev.join_method === 'direct';
+  const directMsg = `<div class="bg-sky border-2 border-ink rounded-xl p-3 text-sm">
+      <p class="font-bold mb-1"><i class="fa-solid fa-bullhorn mr-1"></i>参加表明は主催者に直接申し込んでください</p>
+      <p class="text-xs text-ink/70">${(ev.sns || []).length ? '上の「主催者に連絡」のSNSから申し込めます。' : '主催者の連絡先が登録されていません。'}参加が決まると、主催者が参加者リストに追加します。</p>
+      ${(ev.sns || []).length ? '<button id="goSns" class="sticker bg-white rounded-xl px-3 py-1.5 text-sm font-bold mt-2"><i class="fa-solid fa-arrow-up mr-1"></i>連絡先を見る</button>' : ''}
+    </div>`;
+  const bindGoSns = () => { const g = $('#goSns'); if (g) g.addEventListener('click', () => $('#snsBox')?.scrollIntoView({ behavior: 'smooth', block: 'center' })); };
+  if (direct && !ended && !isMember()) { box.innerHTML = directMsg; bindGoSns(); return; }
   if (!isMember()) {
     box.innerHTML = `<p class="text-sm mb-3">${ended ? 'このイベントは終了しました。' : '参加表明には会員登録（無料）が必要です。参加者リストは主催者と参加者だけに見えます。'}</p>
       ${ended ? '' : '<button id="partGuest" class="sticker bg-flare text-white w-full rounded-2xl py-3 font-display"><i class="fa-solid fa-hand mr-1"></i>参加表明する</button>'}`;
@@ -970,7 +988,7 @@ function renderParts(ev) {
 
   let html = '';
   if (d.isOwner) {
-    html += `<p class="text-xs text-ink/60 mb-2">主催者のあなたは、参加者の追加・編集・削除ができます。</p>`;
+    html += `<p class="text-xs text-ink/60 mb-2">${direct ? '直接申し込み方式です。申し込みがあった人を下の「参加者を追加」で登録してください。' : ''}主催者のあなたは、参加者の追加・編集・削除ができます。</p>`;
     html += partListHtml(d.list, true);
     html += `<div class="mt-4 border-t-2 border-ink/10 pt-3">
       <p class="label">参加者を追加</p>
@@ -998,6 +1016,8 @@ function renderParts(ev) {
     <p class="label">参加者リスト（主催者と参加者だけに表示）</p>${partListHtml(d.list, false)}`;
   } else if (ended) {
     html += '<p class="text-sm text-ink/60">このイベントは終了しました。</p>';
+  } else if (direct) {
+    html += directMsg;
   } else {
     html += `<div class="flex gap-2 mb-2">
         <select id="joinPeople" class="field field-sm w-28 shrink-0" aria-label="人数">${peopleOptions(1)}</select>
@@ -1008,6 +1028,7 @@ function renderParts(ev) {
       <p class="text-[11px] text-ink/50 mt-2">参加表明すると、ニックネームとひとことが主催者とほかの参加者に表示され、参加者リストが見られるようになります。</p>`;
   }
   box.innerHTML = html;
+  bindGoSns();
   bindParts(ev, d);
 }
 async function partCall(ev, body, btn, errEl, okMsg) {
@@ -1279,7 +1300,7 @@ function newDraft(latlng) {
   return {
     editId: null, latlng: latlng || null, category: null, media: null,
     existingMedia: null, removeMedia: false, origExpires: null,
-    exp: 'end', capacity: 'あと2人', fee: '割り勘', ages: ['誰でも'], gender: '',
+    exp: 'end', capacity: 'あと2人', fee: '割り勘', ages: ['誰でも'], gender: '', join: 'app',
   };
 }
 function toLocalInput(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
@@ -1351,6 +1372,7 @@ function openEdit(ev) {
     capacity: CAP_VALUES.includes(ev.capacity) ? ev.capacity : '',
     fee: FEE_VALUES.includes(ev.fee) ? ev.fee : '',
     ages: cond.ages, gender: cond.gender,
+    join: ev.join_method === 'direct' ? 'direct' : 'app',
   };
   resetPostForm();
   $('#pTitle').value = ev.title; $('#pTitleCount').textContent = ev.title.length;
@@ -1425,6 +1447,11 @@ function syncChips() {
   $$('#feeChips .chip').forEach(c => c.setAttribute('aria-pressed', !$('#feeFree').value && c.dataset.v === d.fee));
   $$('#ageChips .chip').forEach(c => c.setAttribute('aria-pressed', d.ages.includes(c.dataset.v)));
   $$('#genderChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.v === d.gender));
+  $$('#joinChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.join === d.join));
+  $('#joinHint').textContent = d.join === 'direct'
+    ? '詳細に「参加表明は主催者に直接申し込んでください」と表示し、アプリの参加表明ボタンは出しません。下の連絡先SNSを1つ以上入れてください。参加が決まった人は、詳細画面から主催者が参加者リストに追加できます。'
+    : '会員がアプリから参加表明できます。参加者リストは主催者と参加者だけに表示されます。';
+  $('#snsErr').textContent = state.step === 4 ? snsError() : '';
   const x = expiresAt();
   $('#expPreview').textContent = x ? `${fmtDT(x)} に地図から消えます` : '';
   $('#timeErr').textContent = state.step === 3 ? timeError() : '';
@@ -1470,6 +1497,13 @@ $('#ageChips').addEventListener('click', e => {
   syncChips();
 });
 $('#genderChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.draft.gender = b.dataset.v; syncChips(); });
+$('#joinChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.draft.join = b.dataset.join; syncChips(); updateNav(); });
+['#snsX', '#snsIg', '#snsLine', '#snsFb', '#snsOther'].forEach(sel => $(sel).addEventListener('input', () => { if (state.draft) { syncChips(); updateNav(); } }));
+function snsError() {
+  if (!state.draft || state.draft.join !== 'direct') return '';
+  const v = readSnsInputs();
+  return Object.values(v).some(Boolean) ? '' : '「主催者に直接申し込んでもらう」場合は、連絡先SNSを1つ以上入れてください';
+}
 $('#pTitle').addEventListener('input', e => { $('#pTitleCount').textContent = e.target.value.length; updateNav(); });
 $('#pDesc').addEventListener('input', e => { $('#pDescCount').textContent = e.target.value.length; });
 
@@ -1625,6 +1659,7 @@ function stepValid(n) {
   if (n === 1) return !!(d.latlng && d.category);
   if (n === 2) return $('#pTitle').value.trim().length > 0;
   if (n === 3) return !timeError();
+  if (n === 4) return !snsError();
   return true;
 }
 function updateNav() { if (state.draft) $('#stepNext').disabled = !stepValid(state.step); }
@@ -1654,6 +1689,7 @@ async function submitPost() {
     fee: $('#feeFree').value.trim() || d.fee,
     conditions: conds,
     sns,
+    join_method: d.join,
     media: d.media ? { data: d.media.data, mimeType: d.media.mimeType } : null,
   };
   const msgs = [editing ? 'Geminiが修正内容をチェック中...' : 'Geminiが投稿をチェック中...', 'キャッチコピーを考えています...'];
