@@ -972,7 +972,7 @@ function renderParts(ev) {
   const direct = ev.join_method === 'direct';
   const directMsg = `<div class="bg-sky border-2 border-ink rounded-xl p-3 text-sm">
       <p class="font-bold mb-1"><i class="fa-solid fa-bullhorn mr-1"></i>参加表明は主催者に直接申し込んでください</p>
-      <p class="text-xs text-ink/70">${(ev.sns || []).length ? '上の「主催者に連絡」のSNSから申し込めます。' : '主催者の連絡先が登録されていません。'}参加が決まると、主催者が参加者リストに追加します。</p>
+      <p class="text-xs text-ink/70">${(ev.sns || []).length ? '上の「主催者に連絡」のSNSから申し込めます。' : '主催者の連絡先が登録されていません。'}</p>
       ${(ev.sns || []).length ? '<button id="goSns" class="sticker bg-white rounded-xl px-3 py-1.5 text-sm font-bold mt-2"><i class="fa-solid fa-arrow-up mr-1"></i>連絡先を見る</button>' : ''}
     </div>`;
   const bindGoSns = () => { const g = $('#goSns'); if (g) g.addEventListener('click', () => $('#snsBox')?.scrollIntoView({ behavior: 'smooth', block: 'center' })); };
@@ -988,18 +988,26 @@ function renderParts(ev) {
 
   let html = '';
   if (d.isOwner) {
-    html += `<p class="text-xs text-ink/60 mb-2">${direct ? '直接申し込み方式です。申し込みがあった人を下の「参加者を追加」で登録してください。' : ''}主催者のあなたは、参加者の追加・編集・削除ができます。</p>`;
-    html += partListHtml(d.list, true);
-    html += `<div class="mt-4 border-t-2 border-ink/10 pt-3">
-      <p class="label">参加者を追加</p>
-      <div class="flex gap-2 mb-2">
-        <input id="addName" class="field field-sm" maxlength="20" placeholder="名前">
-        <select id="addPeople" class="field field-sm w-24 shrink-0">${peopleOptions(1)}</select>
-      </div>
-      <input id="addMsg" class="field field-sm mb-2" maxlength="140" placeholder="メモ（任意）">
-      <p id="addErr" class="form-err"></p>
-      <button id="addSubmit" class="sticker bg-ink text-white w-full rounded-xl py-2.5 font-bold"><i class="fa-solid fa-user-plus mr-1"></i>追加する</button>
-    </div>`;
+    if (direct) {
+      html += `<div class="bg-sky border-2 border-ink rounded-xl p-3 text-sm mb-3">
+        <p class="font-bold"><i class="fa-solid fa-bullhorn mr-1"></i>直接申し込み方式のため、ここからは参加表明の登録はできません</p>
+        <p class="text-xs text-ink/70 mt-1">申し込みは連絡先SNSで直接受け付けてください。受け付け方を変えるときは「修正」から変更できます。</p>
+      </div>`;
+      if (d.list && d.list.length) html += `<p class="label">これまでの参加者（編集・削除のみ）</p>` + partListHtml(d.list, true);
+    } else {
+      html += `<p class="text-xs text-ink/60 mb-2">主催者のあなたは、参加者の追加・編集・削除ができます。</p>`;
+      html += partListHtml(d.list, true);
+      html += `<div class="mt-4 border-t-2 border-ink/10 pt-3">
+        <p class="label">参加者を追加</p>
+        <div class="flex gap-2 mb-2">
+          <input id="addName" class="field field-sm" maxlength="20" placeholder="名前">
+          <select id="addPeople" class="field field-sm w-24 shrink-0">${peopleOptions(1)}</select>
+        </div>
+        <input id="addMsg" class="field field-sm mb-2" maxlength="140" placeholder="メモ（任意）">
+        <p id="addErr" class="form-err"></p>
+        <button id="addSubmit" class="sticker bg-ink text-white w-full rounded-xl py-2.5 font-bold"><i class="fa-solid fa-user-plus mr-1"></i>追加する</button>
+      </div>`;
+    }
   } else if (d.joined) {
     html += `<div class="bg-sun border-2 border-ink rounded-xl p-3 mb-3">
       <p class="font-bold mb-2"><i class="fa-solid fa-circle-check mr-1"></i>参加表明しています</p>
@@ -1449,7 +1457,7 @@ function syncChips() {
   $$('#genderChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.v === d.gender));
   $$('#joinChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.join === d.join));
   $('#joinHint').textContent = d.join === 'direct'
-    ? '詳細に「参加表明は主催者に直接申し込んでください」と表示し、アプリの参加表明ボタンは出しません。下の連絡先SNSを1つ以上入れてください。参加が決まった人は、詳細画面から主催者が参加者リストに追加できます。'
+    ? '詳細に「参加表明は主催者に直接申し込んでください」と表示し、アプリの参加表明ボタンは出しません。アプリからの参加表明の登録はできなくなります。下の連絡先SNSを1つ以上入れてください。'
     : '会員がアプリから参加表明できます。参加者リストは主催者と参加者だけに表示されます。';
   $('#snsErr').textContent = state.step === 4 ? snsError() : '';
   const x = expiresAt();

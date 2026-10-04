@@ -995,6 +995,7 @@ function saveParticipant_(b) {
       setFields_(sh, r._row, f);
     } else if (b.asOwner) {
       if (!isOwner) throw apiError_('参加者を追加できるのは主催者だけです');
+      if (String(ev.join_method) === 'direct') throw apiError_('直接申し込み方式のイベントは、参加者の登録を受け付けていません');
       const nn = clean_(b.nickname, 20);
       if (!nn) throw apiError_('参加者の名前を入力してください');
       appendObj_(sh, {
