@@ -21,7 +21,7 @@ const CONFIG = {
   SHEET_PARTICIPANTS: 'participants',
   GEMINI_MODEL_DEFAULT: 'gemini-3.8-flash',
   APP_URL_DEFAULT: 'https://kenken6291.github.io/ima-coco/',
-  MAX_ACTIVE_POSTS_PER_USER: 5,
+  MAX_ACTIVE_POSTS_PER_USER: 20, // 1人が同時に公開できる件数
   MAX_MEDIA_BYTES: 20 * 1024 * 1024,
   MAX_DAYS_AHEAD: 31,           // 何日先のイベントまで登録できるか
   MAX_EVENT_DAYS: 14,           // 1イベントの最長開催期間
@@ -171,6 +171,8 @@ function doGet(e) {
         return json_({ ok: true, events: getEvents_(), serverTime: new Date().toISOString() });
       case 'geocode':
         return json_({ ok: true, results: geocode_(p.q) });
+      case 'resolveMapUrl':
+        return json_(Object.assign({ ok: true }, resolveMapUrl_(p.url)));
       case 'ping':
         return json_({ ok: true, app: '今CoCo', time: new Date().toISOString() });
       default:
@@ -650,6 +652,97 @@ function geocode_(q) {
     lat: Number(x.geometry.coordinates[1]),
     lng: Number(x.geometry.coordinates[0]),
   }));
+}
+
+/* ---------- GoogleマップのURL（共有リンク）→ 緯度経度 ---------- */
+function isGoogleUrl_(u) {
+  return /^https:\/\/(maps\.app\.goo\.gl|goo\.gl|([a-z0-9-]+\.)*google\.[a-z.]+)(\/|\?|$)/i.test(String(u));
+}
+function validLatLng_(lat, lng) {
+  return isFinite(lat) && isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+}
+function coordsFromText_(text) {
+  let t = String(text || '');
+  try { t = decodeURIComponent(t); } catch (_) {}
+  const pats = [
+    /!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/,
+    /[?&](?:q|query|ll|center|destination|daddr|sll)=(-?\d{1,2}\.\d+)\s*,\s*\+?(-?\d{1,3}\.\d+)/,
+    /\/(?:search|dir\/[^/]*)\/(-?\d{1,2}\.\d+)\s*,\s*\+?(-?\d{1,3}\.\d+)/,
+    /@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/,
+  ];
+  for (let i = 0; i < pats.length; i++) {
+    const m = t.match(pats[i]);
+    if (m && validLatLng_(Number(m[1]), Number(m[2]))) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  return null;
+}
+function coordsFromHtml_(html) {
+  const h = String(html || '');
+  const pats = [
+    /!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/,
+    /(?:center|markers)=(-?\d{1,2}\.\d+)(?:%2C|,)(-?\d{1,3}\.\d+)/,
+    /\[\s*null\s*,\s*null\s*,\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*\]/,
+    /@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/,
+  ];
+  for (let i = 0; i < pats.length; i++) {
+    const m = h.match(pats[i]);
+    if (m && validLatLng_(Number(m[1]), Number(m[2]))) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  return null;
+}
+function placeNameFromUrl_(u) {
+  const s = String(u || '');
+  let m = s.match(/\/place\/([^/@?]+)/);
+  if (!m) {
+    m = s.match(/[?&](?:q|query)=([^&]+)/);
+    if (m && /^-?\d+(\.\d+)?\s*(,|%2C)/i.test(m[1])) m = null;
+  }
+  if (!m) return '';
+  try { return clean_(decodeURIComponent(m[1].replace(/\+/g, ' ')), 100); } catch (_) { return ''; }
+}
+/**
+ * Googleマップの共有URL（https://maps.app.goo.gl/… など）を緯度経度に変換
+ * 短縮URLはリダイレクトを1段ずつたどり、Googleのドメイン以外には進まない
+ */
+function resolveMapUrl_(raw) {
+  const found = String(raw || '').match(/https?:\/\/[^\s<>"'）)]+/);
+  if (!found) throw apiError_('GoogleマップのURLが見つかりません');
+  let url = found[0].replace(/^http:/i, 'https:');
+  if (!isGoogleUrl_(url)) throw apiError_('GoogleマップのURLを貼り付けてください');
+
+  const cache = CacheService.getScriptCache();
+  const ck = 'mapurl_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, url));
+  const hit = cache.get(ck);
+  if (hit) return JSON.parse(hit);
+
+  let title = placeNameFromUrl_(url);
+  let coords = /goo\.gl/i.test(url) ? null : coordsFromText_(url);
+  for (let i = 0; i < 6 && !coords; i++) {
+    const res = UrlFetchApp.fetch(url, { followRedirects: false, muteHttpExceptions: true, headers: { 'Accept-Language': 'ja' } });
+    const code = res.getResponseCode();
+    const headers = res.getHeaders();
+    const loc = headers.Location || headers.location;
+    if (code >= 300 && code < 400 && loc) {
+      let next = String(loc);
+      if (next.charAt(0) === '/') next = url.match(/^https:\/\/[^/]+/)[0] + next;
+      if (!isGoogleUrl_(next)) throw apiError_('GoogleマップのURLを読み取れませんでした');
+      url = next;
+      title = title || placeNameFromUrl_(url);
+      coords = coordsFromText_(url);
+      continue;
+    }
+    if (code !== 200) throw apiError_('GoogleマップのURLを開けませんでした（' + code + '）');
+    coords = coordsFromText_(url) || coordsFromHtml_(res.getContentText());
+    break;
+  }
+  if (!coords && title) {
+    const g = geocode_(title);
+    if (g.length) coords = { lat: g[0].lat, lng: g[0].lng };
+  }
+  if (!coords) throw apiError_('このURLから場所を読み取れませんでした。住所で検索するか「地図で選ぶ」を使ってください');
+  const out = { lat: coords.lat, lng: coords.lng, title: title };
+  cache.put(ck, JSON.stringify(out), 21600);
+  return out;
 }
 
 /** 緯度経度 → 都道府県・エリア・町名 */

@@ -292,10 +292,10 @@
     <div class="step" data-step="1">
       <label class="label" for="placeQ">場所を探す</label>
       <div class="flex gap-2 mb-1">
-        <input id="placeQ" class="field" maxlength="100" placeholder="住所・地名 または 35.6812, 139.7671" enterkeyhint="search">
+        <input id="placeQ" class="field" maxlength="500" placeholder="住所・地名・緯度経度・GoogleマップのURL" enterkeyhint="search">
         <button id="placeSearch" class="sticker bg-ink text-white rounded-xl px-4 font-bold shrink-0" aria-label="検索"><i class="fa-solid fa-magnifying-glass"></i></button>
       </div>
-      <p class="text-[11px] text-ink/60 mb-2">住所でも、緯度・経度（カンマ区切り）でも探せます</p>
+      <p class="text-[11px] text-ink/60 mb-2">住所・地名、緯度・経度（例 35.6812, 139.7671）、Googleマップの「共有」でコピーしたリンク（https://maps.app.goo.gl/…）を貼り付けて探せます</p>
       <div id="placeResults" class="mb-2"></div>
       <div class="grid grid-cols-2 gap-2 mb-3">
         <button id="useGps" class="sticker bg-white rounded-xl py-2.5 text-sm font-bold"><i class="fa-solid fa-location-crosshairs mr-1"></i>現在地を使う</button>
@@ -1545,9 +1545,58 @@ function parseLatLng(q) {
   if (Math.abs(a) > 90 || Math.abs(b) > 180) return null;
   return L.latLng(a, b);
 }
+/* GoogleマップのURL */
+function extractMapUrl(q) {
+  const m = String(q).match(/https?:\/\/[^\s<>"'）)]+/);
+  if (!m) return null;
+  return /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|([a-z0-9-]+\.)*google\.[a-z.]+\/maps|maps\.google\.[a-z.]+)/i.test(m[0]) ? m[0] : null;
+}
+function coordsFromMapUrl(u) {
+  if (/goo\.gl/i.test(u)) return null;
+  let t = u; try { t = decodeURIComponent(u); } catch (_) {}
+  const pats = [
+    /!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/,
+    /[?&](?:q|query|ll|center|destination|daddr)=(-?\d{1,2}\.\d+)\s*,\s*\+?(-?\d{1,3}\.\d+)/,
+    /\/search\/(-?\d{1,2}\.\d+)\s*,\s*\+?(-?\d{1,3}\.\d+)/,
+    /@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/,
+  ];
+  for (const p of pats) {
+    const m = t.match(p);
+    if (m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180) return L.latLng(+m[1], +m[2]);
+  }
+  return null;
+}
+function placeNameFromMapUrl(u) {
+  const m = String(u).match(/\/place\/([^/@?]+)/);
+  if (!m) return '';
+  try { return decodeURIComponent(m[1].replace(/\+/g, ' ')).slice(0, 100); } catch (_) { return ''; }
+}
+async function searchMapUrl(url) {
+  const box = $('#placeResults');
+  const local = coordsFromMapUrl(url);
+  if (local) {
+    box.innerHTML = '';
+    setDraftLocation(local, placeNameFromMapUrl(url));
+    toast('GoogleマップのURLから場所を設定しました');
+    return;
+  }
+  box.innerHTML = '<p class="text-xs font-bold text-ink/60"><i class="fa-solid fa-spinner fa-spin mr-1"></i>GoogleマップのURLを読み取り中...</p>';
+  try {
+    const j = await apiGet({ action: 'resolveMapUrl', url });
+    box.innerHTML = '';
+    setDraftLocation(L.latLng(j.lat, j.lng), j.title || '');
+    toast('GoogleマップのURLから場所を設定しました');
+  } catch (err) {
+    box.innerHTML = `<p class="text-xs font-bold text-flare">${esc(err.message)}</p>`;
+  }
+}
+
 async function searchPlace() {
   const q = $('#placeQ').value.trim(); if (!q) return;
   const box = $('#placeResults');
+  const mapUrl = extractMapUrl(q);
+  if (mapUrl) { await searchMapUrl(mapUrl); return; }
+  if (/https?:\/\//i.test(q)) { box.innerHTML = '<p class="text-xs font-bold text-flare">GoogleマップのURL以外のリンクは使えません</p>'; return; }
   const ll = parseLatLng(q);
   if (ll) { box.innerHTML = ''; setDraftLocation(ll, ''); toast('緯度・経度で場所を設定しました'); return; }
   box.innerHTML = '<p class="text-xs font-bold text-ink/60">検索中...</p>';
@@ -1571,6 +1620,8 @@ async function searchPlace() {
 }
 $('#placeSearch').addEventListener('click', searchPlace);
 $('#placeQ').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchPlace(); } });
+// GoogleマップのURLを貼り付けたら自動で読み取る
+$('#placeQ').addEventListener('paste', () => setTimeout(() => { if (extractMapUrl($('#placeQ').value)) searchPlace(); }, 0));
 $('#pickOnMap').addEventListener('click', () => {
   state.picking = true;
   $$('.sheet.open').forEach(s => s.classList.remove('open'));
