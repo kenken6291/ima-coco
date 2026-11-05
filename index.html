@@ -94,6 +94,23 @@
   .pw-wrap .field { padding-right: 48px; }
   .pw-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 10px; }
   .auth-err, .set-err, .form-err { color: var(--flare); font-size: 14px; font-weight: 700; min-height: 1.25rem; }
+  .mic-btn { width: 40px; height: 40px; border-radius: 12px; border: 2px solid var(--ink); background: #fff; flex-shrink: 0; font-size: 16px; }
+  .mic-btn.rec { background: var(--flare); color: #fff; animation: micpulse 1.2s ease-in-out infinite; }
+  @keyframes micpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,61,104,.6); } 50% { box-shadow: 0 0 0 8px rgba(255,61,104,0); } }
+  .mic-status { font-size: 11px; font-weight: 700; color: var(--flare); min-height: 1rem; }
+  .sw { position: relative; width: 52px; height: 30px; border-radius: 999px; border: 2px solid var(--ink); background: #e5e3ef; flex-shrink: 0; transition: background .15s; }
+  .sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 2px solid var(--ink); transition: transform .15s; }
+  .sw[aria-checked="true"] { background: var(--mint); }
+  .sw[aria-checked="true"]::after { transform: translateX(22px); }
+  .sw:disabled { opacity: .5; }
+  .agree-row { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; font-weight: 700; padding: 8px 10px; border: 2px solid var(--ink); border-radius: 12px; margin-bottom: 6px; background: #fff; cursor: pointer; }
+  .agree-row input { margin-top: 2px; width: 20px; height: 20px; flex-shrink: 0; accent-color: #FF3D68; }
+  .help h3 { font-family: "Dela Gothic One", "M PLUS Rounded 1c", sans-serif; font-size: 16px; margin: 18px 0 6px; }
+  .help p, .help li { font-size: 14px; line-height: 1.75; }
+  .help ol { list-style: decimal; padding-left: 1.3em; }
+  .help ul { list-style: disc; padding-left: 1.3em; }
+  .line-btn { background: #06C755; color: #fff; }
+  .coco-pin-lock { position: absolute; left: 18px; bottom: 12px; font-size: 11px; background: #fff; border: 2px solid var(--ink); border-radius: 8px; line-height: 14px; padding: 0 2px; }
   .sns-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .sns-row i { width: 22px; text-align: center; font-size: 18px; }
 
@@ -109,6 +126,7 @@
   @keyframes burst { 0% { transform: translate(0,0) scale(.4); opacity: 1; } 100% { transform: translate(var(--x), var(--y)) scale(1.2); opacity: 0; } }
 
   @media (prefers-reduced-motion: reduce) {
+    .mic-btn.rec,
     .coco-pin-inner, .coco-pin.soon .coco-pin-body, .me-dot::after, .loader-dot, .burst, .pick-pin { animation: none !important; }
     .sheet, .backdrop, .toast { transition: none; }
   }
@@ -121,10 +139,16 @@
 <!-- ヘッダー -->
 <header class="fixed top-0 inset-x-0 z-[500] pt-safe pointer-events-none">
   <div class="flex items-center justify-between px-3 gap-2">
-    <h1 class="pointer-events-auto sticker bg-flare text-white rounded-2xl px-3 py-1.5 font-display text-xl leading-none tracking-wide select-none" style="text-shadow:2px 2px 0 var(--ink)">今CoCo</h1>
-    <button id="btnUser" class="pointer-events-auto sticker bg-white rounded-full pl-3 pr-4 py-2 text-sm font-bold flex items-center gap-2 max-w-[55%]">
-      <i class="fa-solid fa-circle-user text-lg"></i><span id="userLabel" class="truncate">ログイン／登録</span>
-    </button>
+    <div class="pointer-events-auto flex items-end gap-1.5">
+      <h1 class="sticker bg-flare text-white rounded-2xl px-3 py-1.5 font-display text-xl leading-none tracking-wide select-none" style="text-shadow:2px 2px 0 var(--ink)">今CoCo</h1>
+      <span id="verBadge" class="text-[10px] font-bold bg-white/90 border border-ink/40 rounded-full px-1.5 leading-4 select-none"></span>
+    </div>
+    <div class="pointer-events-auto flex items-center gap-2 min-w-0 max-w-[62%]">
+      <button id="btnHelp" class="sticker bg-sun rounded-full w-10 h-10 text-base shrink-0" aria-label="使い方"><i class="fa-solid fa-question"></i></button>
+      <button id="btnUser" class="sticker bg-white rounded-full pl-3 pr-4 py-2 text-sm font-bold flex items-center gap-2 min-w-0">
+        <i class="fa-solid fa-circle-user text-lg"></i><span id="userLabel" class="truncate">ログイン／登録</span>
+      </button>
+    </div>
   </div>
   <nav id="filterBar" class="pointer-events-auto flex gap-2 overflow-x-auto no-scrollbar px-3 pt-3 pb-2" aria-label="カテゴリで絞り込み"></nav>
 </header>
@@ -209,18 +233,29 @@
       <input id="regNick" class="field mb-3" maxlength="20" autocomplete="nickname" placeholder="例：キャンプ好きのケン">
       <label class="label" for="regEmail">メールアドレス（公開されません）</label>
       <input id="regEmail" type="email" class="field mb-3" autocomplete="email" inputmode="email" maxlength="254">
-      <div class="bg-sky border-2 border-ink rounded-2xl p-3 text-xs leading-relaxed mb-3">
+      <div class="bg-sky border-2 border-ink rounded-2xl p-3 text-xs leading-relaxed mb-2 max-h-56 overflow-y-auto">
         <p class="font-bold text-sm mb-1">利用上の注意</p>
-        <p>・投稿した場所は誰でも見られます。自宅など個人が特定される場所は投稿しないでください。</p>
+        <p>・「みんなに公開」の投稿は誰でも見られます。自宅など個人が特定される場所は投稿しないでください。</p>
+        <p>・「限定公開」の投稿は、あなたが公開をONにした会員だけが見られます。相手が画面を保存・転送する可能性はあります。</p>
         <p>・参加表明すると、ニックネームとメッセージが主催者と他の参加者に表示されます。</p>
-        <p>・初対面の人と会うときは人目のある場所で。トラブルは当事者同士で解決してください。</p>
-        <p>・投稿はAIが自動チェックしますが、内容の正確さや安全は保証されません。</p>
+        <p>・初対面の人と会うときは人目のある場所で。未成年の方は保護者の同意を得てください。</p>
         <p>・不適切な投稿は予告なく削除することがあります。</p>
+        <p class="font-bold text-sm mt-2 mb-1">免責事項</p>
+        <p>・本サービスは個人が運営する無料のサービスです。内容の正確さ・安全性・継続的な提供を保証しません。</p>
+        <p>・投稿はAIが自動チェックしますが、すべての問題を防げるわけではありません。</p>
+        <p>・本サービスの利用、会員同士の交流、イベントへの参加などで生じた損害・事故・トラブルについて、運営者は一切の責任を負いません。</p>
+        <p>・機能やデータは予告なく変更・停止・削除することがあります。</p>
+        <p class="font-bold text-sm mt-2 mb-1">自己責任・当事者間での解決</p>
+        <p>・本サービスは自己責任でご利用ください。</p>
+        <p>・会員同士・参加者同士で生じた問題は、当事者間で話し合って解決してください。運営者は仲介・調停を行いません。</p>
       </div>
-      <label class="flex items-start gap-2 text-sm font-bold mb-2 cursor-pointer">
-        <input id="regAgree" type="checkbox" class="mt-1 w-5 h-5 accent-[#FF3D68]">
-        <span>利用上の注意に同意します</span>
-      </label>
+      <p class="text-xs font-bold mb-1.5">すべてにチェックすると登録できます</p>
+      <div id="agreeBox">
+        <label class="agree-row"><input type="checkbox" class="reg-agree" value="notice"><span>利用上の注意を読み、守ります</span></label>
+        <label class="agree-row"><input type="checkbox" class="reg-agree" value="disclaimer"><span>免責事項に同意します</span></label>
+        <label class="agree-row"><input type="checkbox" class="reg-agree" value="self"><span>自己責任で利用します</span></label>
+        <label class="agree-row"><input type="checkbox" class="reg-agree" value="parties"><span>トラブルは当事者間で解決します</span></label>
+      </div>
       <p class="auth-err"></p>
       <button id="regSubmit" class="sticker bg-flare text-white w-full rounded-2xl py-3 mt-2 font-display text-lg">仮パスワードを受け取る</button>
       <p class="text-xs text-ink/60 mt-3">入力したメールアドレスに仮パスワードが届きます。ログイン後、自分のパスワードに変更してください。</p>
@@ -312,9 +347,15 @@
     <!-- STEP 2 内容 -->
     <div class="step hidden" data-step="2">
       <label class="label" for="pTitle">タイトル</label>
-      <input id="pTitle" class="field mb-1" maxlength="40" placeholder="例：多摩川の河原でBBQ！">
+      <div class="flex gap-2 mb-1">
+        <input id="pTitle" class="field" maxlength="40" placeholder="例：多摩川の河原でBBQ！">
+        <button type="button" class="mic-btn" data-mic="pTitle" aria-label="タイトルを音声入力"><i class="fa-solid fa-microphone"></i></button>
+      </div>
       <p class="text-right text-xs text-ink/50 mb-3"><span id="pTitleCount">0</span>/40</p>
-      <label class="label" for="pDesc">ひとこと</label>
+      <div class="flex items-end justify-between gap-2 mb-1.5">
+        <label class="label mb-0" for="pDesc">ひとこと</label>
+        <button type="button" class="mic-btn" data-mic="pDesc" aria-label="ひとことを音声入力"><i class="fa-solid fa-microphone"></i></button>
+      </div>
       <textarea id="pDesc" class="field mb-1" rows="4" maxlength="500" placeholder="どんな感じ？目印は？持ち物は？"></textarea>
       <p class="text-right text-xs text-ink/50 mb-3"><span id="pDescCount">0</span>/500</p>
       <span class="label">写真・動画（任意）</span>
@@ -365,6 +406,13 @@
 
     <!-- STEP 4 募集・連絡先 -->
     <div class="step hidden" data-step="4">
+      <span class="label">公開範囲</span>
+      <div id="visChips" class="flex flex-wrap gap-2 mb-2">
+        <button class="chip" data-vis="public"><i class="fa-solid fa-earth-asia mr-1"></i>みんなに公開</button>
+        <button class="chip" data-vis="limited"><i class="fa-solid fa-lock mr-1"></i>公開相手だけ（限定公開）</button>
+      </div>
+      <p id="visHint" class="text-xs text-ink/60 mb-5"></p>
+
       <span class="label">参加の受け付け方</span>
       <div id="joinChips" class="flex flex-wrap gap-2 mb-2">
         <button class="chip" data-join="app">アプリで参加表明を受け付ける</button>
@@ -409,7 +457,10 @@
         <button class="chip" data-v="男性のみ">男性のみ</button>
       </div>
       <label class="label" for="condFree">そのほかの条件</label>
-      <input id="condFree" class="field mb-5" maxlength="40" placeholder="例：道具不要、初心者歓迎">
+      <div class="flex gap-2 mb-5">
+        <input id="condFree" class="field" maxlength="40" placeholder="例：道具不要、初心者歓迎">
+        <button type="button" class="mic-btn" data-mic="condFree" aria-label="条件を音声入力"><i class="fa-solid fa-microphone"></i></button>
+      </div>
 
       <span class="label">連絡先SNS（任意）</span>
       <p class="text-xs text-ink/60 mb-2">入れたSNSに、見た人が直接連絡できます。公開されるので注意してください。</p>
@@ -429,6 +480,71 @@
   </div>
 </section>
 
+<!-- 使い方 -->
+<section id="sheetHelp" class="sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div class="sheet-grab"></div>
+  <div class="sheet-body px-5 pb-safe help">
+    <div class="flex items-center justify-between mt-2">
+      <h2 id="helpTitle" class="font-display text-xl">今CoCoの使い方</h2>
+      <button class="close-sheet w-10 h-10 text-xl shrink-0" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <p class="mt-1">「今、ここで遊んでるよ！」「あと2人合流できるよ！」を地図でシェアするアプリです。見るだけなら登録不要。投稿・参加表明・限定公開は無料の会員登録で使えます。</p>
+
+    <h3>📍 地図を見る</h3>
+    <ul>
+      <li>ピンをタップすると詳細が開きます。<b>LIVE</b>は開催中、<b>NEW</b>は15分以内の新着、🔒は限定公開です。</li>
+      <li>上の種別ボタンで絞り込み、右下の <i class="fa-solid fa-list-ul"></i> でエリア別の一覧が見られます。</li>
+      <li>投稿は表示期限が来ると地図から自動で消えます。</li>
+    </ul>
+
+    <h3>✨ 投稿する</h3>
+    <ol>
+      <li>右下の「今ココ！」を押す（地図を長押しするとその場所で始まります）。</li>
+      <li>場所と種別 → 内容と写真 → 開催日時 → 公開範囲と募集 の4ステップで入力します。</li>
+      <li>投稿はAI（Gemini）がチェックしてから地図に載ります。修正・削除はピンの詳細かマイページから。</li>
+    </ol>
+
+    <h3>🎤 音声入力</h3>
+    <ul>
+      <li>入力欄の横の <i class="fa-solid fa-microphone"></i> を押して話します。話の途中で間があいても聞き取りを続けます。</li>
+      <li>終わったら、もう一度ボタンを押して止めてください。</li>
+    </ul>
+
+    <h3>🙋 参加表明</h3>
+    <ul>
+      <li>詳細の「参加表明する」から人数とひとことを送れます。参加者リストは主催者と参加者だけに見えます。</li>
+      <li>「主催者に直接申し込み」のイベントは、表示された連絡先SNSから申し込んでください。</li>
+    </ul>
+
+    <h3>🔒 家族・友人だけに見せる（限定公開）</h3>
+    <ol>
+      <li>マイページの「公開相手（家族・友人）」で、相手のニックネームかメールアドレスを入れて追加します（相手も会員登録が必要です）。</li>
+      <li>追加した直後は<b>非公開（OFF）</b>です。見せたい相手のスイッチをONにしてください。いつでもOFFに戻せます。</li>
+      <li>投稿のとき「公開範囲」で「公開相手だけ（限定公開）」を選ぶと、ONにした相手と自分だけに表示されます。</li>
+      <li>投稿後もマイページの一覧で「みんなに公開／限定公開」をワンタップで切り替えられます。</li>
+    </ol>
+
+    <h3><i class="fa-brands fa-line" style="color:#06C755"></i> LINEなどで送る</h3>
+    <ul>
+      <li>詳細の「LINEで送る」で、イベントのリンクをLINEのトークに送れます。「その他」でメールや他のアプリ、「コピー」でリンクのコピーもできます。</li>
+      <li>限定公開のリンクは、公開をONにした相手がログインしたときだけ開けます。</li>
+      <li>マイページの「LINEで招待」から、家族や友人に今CoCoへの登録を案内できます。</li>
+    </ul>
+
+    <h3>🔊 読み上げ</h3>
+    <p>詳細の「読み上げ」で内容を音声で聞けます（ログイン中はAI音声、それ以外は端末の音声）。</p>
+
+    <h3>⚠️ 注意・免責</h3>
+    <ul>
+      <li>自宅など個人が特定される場所は投稿しないでください。初対面の人とは人目のある場所で会いましょう。</li>
+      <li>本サービスは個人運営の無料サービスで、内容の正確さや安全は保証しません。利用によって生じた損害・トラブルについて運営者は責任を負いません。</li>
+      <li>自己責任でご利用ください。会員同士の問題は当事者間で解決してください。</li>
+    </ul>
+
+    <p class="text-xs text-ink/50 mt-6 mb-2 text-center">今CoCo（いまココ）　画面 <span class="ver-app"></span>　／　サーバー <span id="verServer">確認中…</span></p>
+  </div>
+</section>
+
 <!-- マイページ -->
 <section id="sheetMy" class="sheet" role="dialog" aria-modal="true" aria-labelledby="myTitle">
   <div class="sheet-grab"></div>
@@ -441,6 +557,17 @@
       <button class="close-sheet w-10 h-10 text-xl shrink-0" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
     </div>
     <div id="myBody" class="mt-3"></div>
+
+    <h3 class="font-display text-base mt-6 mb-1"><i class="fa-solid fa-lock mr-1"></i>公開相手（家族・友人）</h3>
+    <p class="text-xs text-ink/60 mb-2">ここでONにした会員だけが、あなたの「限定公開」の投稿を見られます。追加した直後は非公開（OFF）です。</p>
+    <div class="flex gap-2">
+      <input id="shareQuery" class="field" maxlength="254" placeholder="相手のニックネーム または メールアドレス" autocomplete="off">
+      <button id="shareAdd" class="sticker bg-ink text-white rounded-xl px-4 font-bold shrink-0">追加</button>
+    </div>
+    <p id="shareErr" class="set-err mt-1"></p>
+    <div id="shareList" class="mt-1"></div>
+    <button id="shareInvite" class="sticker line-btn w-full rounded-2xl py-3 mt-3 font-bold"><i class="fa-brands fa-line mr-1"></i>LINEで家族・友人を招待</button>
+    <div id="sharedWithMe" class="mt-4"></div>
 
     <h3 class="font-display text-base mt-6 mb-2">ニックネームの変更</h3>
     <div class="flex gap-2">
@@ -484,6 +611,7 @@
 /* =========================================================
  * 設定：GASのウェブアプリURL
  * ========================================================= */
+const APP_VERSION = 'v2.0.0';   // 画面のバージョン（GAS側の APP_VERSION とそろえる）
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxxQSPk7DVxkqxCOg-7ptiq7kYNumIdaHkaRwnPsbxf7Tv8diDNPvlFXrtepWp2gKb5qw/exec';
 
 const CATS = [
@@ -517,7 +645,7 @@ const state = {
   area: 'all', listSort: 'soon',
   auth: loadAuth(), meLatLng: null, meMarker: null,
   picking: false, pickMarker: null, openEventId: null, tick: null,
-  partData: null,
+  partData: null, serverVersion: '', shares: null,
   authView: 'login', afterAuth: null,
   step: 1,
   draft: null,
@@ -614,6 +742,7 @@ function closeSheets() {
   $('#backdrop').classList.remove('open');
   state.openEventId = null;
   clearInterval(state.tick);
+  micStop(); stopSpeak();
   const v = $('#detailBody iframe'); if (v) v.src = 'about:blank';
   clearPickMarker();
   $$('input.pw-shown').forEach(i => { i.type = 'password'; i.classList.remove('pw-shown'); });
@@ -700,6 +829,7 @@ function pinIcon(ev, i) {
                <div class="coco-pin-body"></div>
                <div class="coco-pin-emoji">${esc(ev.icon || c.icon)}</div>
                ${badge}
+               ${ev.visibility === 'limited' ? '<span class="coco-pin-lock" aria-label="限定公開">🔒</span>' : ''}
                ${ev.participant_count ? `<span class="coco-pin-count">👥${ev.participant_count}</span>` : ''}
              </div>
            </div>`,
@@ -729,8 +859,15 @@ function renderMarkers() {
 
 async function loadEvents(silent) {
   try {
-    const j = await apiGet({ action: 'getEvents' });
-    state.events = (j.events || []).filter(ev => isFinite(ev.lat) && isFinite(ev.lng));
+    const pub = apiGet({ action: 'getEvents' });
+    const lim = isMember()
+      ? apiPost({ action: 'getLimitedEvents', token: state.auth.token }).catch(() => ({ events: [] }))
+      : Promise.resolve({ events: [] });
+    const [j, k] = await Promise.all([pub, lim]);
+    if (j.version) setServerVersion(j.version);
+    const merged = new Map();
+    [...(j.events || []), ...(k.events || [])].forEach(ev => merged.set(ev.id, ev));
+    state.events = [...merged.values()].filter(ev => isFinite(ev.lat) && isFinite(ev.lng));
     renderMarkers();
     if (state.openEventId && !state.events.find(x => x.id === state.openEventId)) { closeSheets(); toast('このイベントは掲載が終了しました'); }
   } catch (err) {
@@ -834,12 +971,15 @@ function openDetail(id) {
       <div class="flex items-start gap-3">
         <div class="w-14 h-14 shrink-0 rounded-2xl border-2 border-ink flex items-center justify-center text-3xl" style="background:${c.color}">${esc(ev.icon || c.icon)}</div>
         <div class="min-w-0 flex-1">
-          <p class="text-xs font-bold text-ink/60">${esc(c.label)}　${esc(ev.nickname)}さん　${ago(ev.created_at)}</p>
+          <p class="text-xs font-bold text-ink/60">${ev.visibility === 'limited' ? '<span class="inline-block bg-ink text-white rounded-full px-2 mr-1">🔒 限定公開</span>' : ''}${esc(c.label)}　${esc(ev.nickname)}さん　${ago(ev.created_at)}</p>
           <h2 id="dTitle" class="font-display text-xl leading-snug break-words">${esc(ev.title)}</h2>
         </div>
         <button class="close-sheet-d w-10 h-10 text-xl shrink-0" aria-label="閉じる"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      ${ev.summary ? `<p class="inline-block mt-3 bg-sun border-2 border-ink rounded-xl px-3 py-1 font-bold">${esc(ev.summary)}</p>` : ''}
+      <div class="flex items-center gap-2 mt-3 flex-wrap">
+        ${ev.summary ? `<p class="inline-block bg-sun border-2 border-ink rounded-xl px-3 py-1 font-bold">${esc(ev.summary)}</p>` : ''}
+        <button id="btnSpeak" class="sticker bg-white rounded-full px-3 py-1 text-sm font-bold ml-auto"><i class="fa-solid fa-volume-high mr-1"></i>読み上げ</button>
+      </div>
 
       <div class="mt-4 bg-ink text-white rounded-2xl px-4 py-3">
         <div class="flex items-center gap-2">
@@ -875,17 +1015,29 @@ function openDetail(id) {
         <div id="partArea"></div>
       </section>
 
+      <section class="mt-4">
+        <p class="label mb-2"><i class="fa-solid fa-share-nodes mr-1"></i>その場で共有</p>
+        <div class="grid grid-cols-3 gap-2">
+          <button id="btnLine" class="sticker line-btn rounded-2xl py-3 font-bold text-sm"><i class="fa-brands fa-line mr-1"></i>LINEで送る</button>
+          <button id="btnShare" class="sticker bg-white rounded-2xl py-3 font-bold text-sm"><i class="fa-solid fa-arrow-up-from-bracket mr-1"></i>その他</button>
+          <button id="btnCopy" class="sticker bg-white rounded-2xl py-3 font-bold text-sm"><i class="fa-regular fa-copy mr-1"></i>コピー</button>
+        </div>
+        ${ev.visibility === 'limited' ? '<p class="text-[11px] text-ink/60 mt-1.5"><i class="fa-solid fa-lock mr-1"></i>限定公開のリンクは、公開をONにした会員がログインしたときだけ開けます。</p>' : ''}
+      </section>
+
       ${mine
-        ? `<div class="grid grid-cols-3 gap-2 mt-4">
+        ? `<div class="grid grid-cols-2 gap-2 mt-4">
              <button id="btnEdit" class="sticker bg-sun rounded-2xl py-3 font-bold"><i class="fa-solid fa-pen mr-1"></i>修正</button>
              <button id="btnDelete" class="sticker bg-white rounded-2xl py-3 font-bold text-flare"><i class="fa-solid fa-trash-can mr-1"></i>削除</button>
-             <button id="btnShare" class="sticker bg-white rounded-2xl py-3 font-bold"><i class="fa-solid fa-share-nodes mr-1"></i>シェア</button>
            </div>`
-        : `<button id="btnShare" class="sticker bg-white w-full rounded-2xl py-3 mt-4 font-bold"><i class="fa-solid fa-share-nodes mr-1"></i>シェア</button>`}
+        : ''}
     </div>`;
 
   $('.close-sheet-d').addEventListener('click', closeSheets);
   $('#btnShare').addEventListener('click', () => shareEvent(ev));
+  $('#btnLine').addEventListener('click', () => shareToLine(eventShareText(ev), eventUrl(ev)));
+  $('#btnCopy').addEventListener('click', () => copyText(eventShareText(ev) + '\n' + eventUrl(ev)));
+  $('#btnSpeak').addEventListener('click', e => speakText(eventNarration(ev), e.currentTarget));
   if (mine) {
     $('#btnEdit').addEventListener('click', () => openEdit(ev));
     $('#btnDelete').addEventListener('click', () => deleteEvent(ev));
@@ -907,13 +1059,31 @@ function openDetail(id) {
   openSheet('sheetDetail');
 }
 
+function appUrl() { return location.origin + location.pathname; }
+function eventUrl(ev) { return appUrl() + '?e=' + encodeURIComponent(ev.id); }
+function eventShareText(ev) {
+  return `${ev.icon} ${ev.title}${ev.summary ? '｜' + ev.summary : ''}\n📅 ${fmtRange(evStart(ev), evEnd(ev))}\n📍 ${placeText(ev)}${ev.visibility === 'limited' ? '\n🔒 限定公開（ログインして見てね）' : ''}\n#今CoCo`;
+}
+/** LINEのトーク選択画面を開いて、文章とリンクを送る */
+function shareToLine(text, url) {
+  const u = 'https://line.me/R/share?text=' + encodeURIComponent(text + '\n' + url);
+  const w = window.open(u, '_blank', 'noopener');
+  if (!w) location.href = u;
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('リンクをコピーしました'); }
+  catch (_) {
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('リンクをコピーしました'); } catch (__) { toast('コピーできませんでした'); }
+    ta.remove();
+  }
+}
 async function shareEvent(ev) {
-  const url = location.origin + location.pathname + '?e=' + encodeURIComponent(ev.id);
-  const text = `${ev.icon} ${ev.title}${ev.summary ? '｜' + ev.summary : ''}\n📅 ${fmtRange(evStart(ev), evEnd(ev))}\n📍 ${placeText(ev)} #今CoCo`;
+  const url = eventUrl(ev), text = eventShareText(ev);
   try {
     if (navigator.share) { await navigator.share({ title: '今CoCo', text, url }); return; }
-    await navigator.clipboard.writeText(text + '\n' + url);
-    toast('リンクをコピーしました');
+    await copyText(text + '\n' + url);
   } catch (err) {
     if (err && err.name !== 'AbortError') toast('シェアできませんでした');
   }
@@ -968,6 +1138,7 @@ function partListHtml(list, owner) {
 }
 function renderParts(ev) {
   const box = $('#partArea'); if (!box) return;
+  if (Mic.target && box.contains(Mic.target)) micStop();
   const ended = evStatus(ev).key === 'ended';
   const direct = ev.join_method === 'direct';
   const directMsg = `<div class="bg-sky border-2 border-ink rounded-xl p-3 text-sm">
@@ -1014,6 +1185,7 @@ function renderParts(ev) {
       <div class="flex gap-2 mb-2">
         <select id="joinPeople" class="field field-sm w-28 shrink-0">${peopleOptions(d.me.people)}</select>
         <input id="joinMsg" class="field field-sm" maxlength="140" value="${esc(d.me.message)}" placeholder="ひとこと（任意）">
+        <button type="button" class="mic-btn" data-mic="joinMsg" aria-label="ひとことを音声入力"><i class="fa-solid fa-microphone"></i></button>
       </div>
       <p id="joinErr" class="form-err"></p>
       <div class="grid grid-cols-2 gap-2">
@@ -1030,6 +1202,7 @@ function renderParts(ev) {
     html += `<div class="flex gap-2 mb-2">
         <select id="joinPeople" class="field field-sm w-28 shrink-0" aria-label="人数">${peopleOptions(1)}</select>
         <input id="joinMsg" class="field field-sm" maxlength="140" placeholder="ひとこと（例：10分で着きます！）">
+        <button type="button" class="mic-btn" data-mic="joinMsg" aria-label="ひとことを音声入力"><i class="fa-solid fa-microphone"></i></button>
       </div>
       <p id="joinErr" class="form-err"></p>
       <button id="joinSave" class="sticker bg-flare text-white w-full rounded-2xl py-3 font-display"><i class="fa-solid fa-hand mr-1"></i>参加表明する</button>
@@ -1133,6 +1306,7 @@ function finishAuth() {
   closeSheets();
   state.partData = null;
   renderMarkers();
+  loadEvents(true);
   const f = state.afterAuth; state.afterAuth = null;
   if (f) setTimeout(f, 300);
 }
@@ -1147,14 +1321,19 @@ $('#regSubmit').addEventListener('click', () => withButton($('#regSubmit'), asyn
   const nickname = $('#regNick').value.trim(), email = $('#regEmail').value.trim();
   if (nickname.length < 2) return authErr('register', 'ニックネームは2文字以上で入力してください');
   if (!validEmail(email)) return authErr('register', 'メールアドレスを正しく入力してください');
-  if (!$('#regAgree').checked) return authErr('register', '利用上の注意への同意が必要です');
+  const agreements = $$('.reg-agree').filter(c => c.checked).map(c => c.value);
+  if (agreements.length < $$('.reg-agree').length) return authErr('register', '「利用上の注意」「免責事項」「自己責任」「当事者間での解決」のすべてにチェックしてください');
   try {
-    const j = await apiPost({ action: 'register', nickname, email, agree: true });
+    const j = await apiPost({ action: 'register', nickname, email, agree: true, agreements });
     $('#sentText').textContent = `${j.email} に仮パスワードを送りました。メールに書かれた仮パスワードでログインしてください。`;
     $('#loginEmail').value = j.email; $('#loginPass').value = '';
     setAuthView('sent');
   } catch (err) { authErr('register', err.message); }
 }));
+
+function syncAgree() { $('#regSubmit').disabled = !$$('.reg-agree').every(c => c.checked); }
+$$('.reg-agree').forEach(c => c.addEventListener('change', syncAgree));
+syncAgree();
 
 $('#loginSubmit').addEventListener('click', () => withButton($('#loginSubmit'), async () => {
   const email = $('#loginEmail').value.trim(), password = $('#loginPass').value;
@@ -1213,7 +1392,11 @@ async function openMyPage() {
   ['#setCurrent', '#setNew', '#setConfirm'].forEach(s => $(s).value = '');
   $('#setNickErr').textContent = ''; $('#setPassErr').textContent = '';
   $('#myBody').innerHTML = '<p class="text-sm font-bold text-ink/60">読み込み中...</p>';
+  $('#shareQuery').value = ''; $('#shareErr').textContent = '';
+  if (!state.shares) $('#shareList').innerHTML = '<p class="text-sm text-ink/60">読み込み中...</p>';
+  else renderShares(state.shares);
   openSheet('sheetMy');
+  loadShares();
   try {
     const j = await apiPost({ action: 'getMyData', token: state.auth.token });
     $('#myEmail').textContent = j.user.email || '';
@@ -1230,6 +1413,9 @@ async function openMyPage() {
         </button>
         <p class="text-sm mt-2"><i class="fa-solid fa-user-group mr-1"></i>参加表明 <b>${ev.participant_count}</b>人（${ev.participant_n}組）
           ${ev.participants.length ? `<span class="text-xs text-ink/60">：${ev.participants.slice(0, 6).map(p => esc(p.nickname)).join('、')}${ev.participants.length > 6 ? ' ほか' : ''}</span>` : ''}</p>
+        <button class="my-vis w-full mt-2 flex items-center justify-between gap-2 border-2 border-ink rounded-xl px-3 py-2 text-sm font-bold ${ev.visibility === 'limited' ? 'bg-ink text-white' : 'bg-sky'}" data-id="${esc(ev.id)}" data-vis="${ev.visibility === 'limited' ? 'limited' : 'public'}">
+          ${visLabel(ev.visibility)}<span class="text-[11px] opacity-75 shrink-0">タップで切替</span>
+        </button>
         <div class="grid grid-cols-3 gap-2 mt-2">
           <button class="my-ev sticker bg-white rounded-xl py-2 text-sm font-bold" data-id="${esc(ev.id)}"><i class="fa-solid fa-users mr-1"></i>参加者</button>
           <button class="my-edit sticker bg-sun rounded-xl py-2 text-sm font-bold" data-id="${esc(ev.id)}"><i class="fa-solid fa-pen mr-1"></i>修正</button>
@@ -1256,6 +1442,7 @@ async function openMyPage() {
     $$('#myBody .my-ev, #myBody .my-joined').forEach(b => b.addEventListener('click', () => goDetail(b.dataset.id)));
     $$('#myBody .my-edit').forEach(b => b.addEventListener('click', () => openEdit(myMap[b.dataset.id])));
     $$('#myBody .my-del').forEach(b => b.addEventListener('click', () => deleteEvent(myMap[b.dataset.id], true)));
+    $$('#myBody .my-vis').forEach(b => b.addEventListener('click', () => toggleEventVisibility(b, myMap[b.dataset.id])));
   } catch (err) {
     if (handleAuthError(err)) return;
     $('#myBody').innerHTML = `<p class="text-sm text-flare font-bold">${esc(err.message)}</p>`;
@@ -1294,8 +1481,303 @@ $('#setPassSubmit').addEventListener('click', () => withButton($('#setPassSubmit
 
 $('#btnLogout').addEventListener('click', async () => {
   const token = state.auth?.token;
-  saveAuth(null); state.partData = null; closeSheets(); renderMarkers(); toast('ログアウトしました');
+  saveAuth(null); state.partData = null; state.shares = null; closeSheets();
+  state.events = state.events.filter(ev => ev.visibility !== 'limited');
+  renderMarkers(); toast('ログアウトしました');
   try { await apiPost({ action: 'logout', token }); } catch (_) {}
+});
+
+/* ---------- 公開範囲 ---------- */
+function visLabel(v) {
+  return v === 'limited'
+    ? '<span><i class="fa-solid fa-lock mr-1"></i>限定公開（公開相手だけ）</span>'
+    : '<span><i class="fa-solid fa-earth-asia mr-1"></i>みんなに公開</span>';
+}
+async function toggleEventVisibility(btn, ev) {
+  if (!ev) return;
+  const next = btn.dataset.vis === 'limited' ? 'public' : 'limited';
+  const msg = next === 'limited'
+    ? `「${ev.title}」を限定公開にしますか？\n自分と、公開相手でONにした会員だけが見られるようになります。`
+    : `「${ev.title}」をみんなに公開しますか？\n地図を見た人なら誰でも見られるようになります。`;
+  if (!confirm(msg)) return;
+  btn.disabled = true;
+  try {
+    const j = await apiPost({ action: 'setEventVisibility', token: state.auth.token, id: ev.id, visibility: next });
+    ev.visibility = j.event.visibility;
+    btn.dataset.vis = ev.visibility;
+    btn.className = btn.className.replace(/\bbg-(ink|sky)\b/g, '').replace(/\btext-white\b/g, '') + (ev.visibility === 'limited' ? ' bg-ink text-white' : ' bg-sky');
+    btn.innerHTML = visLabel(ev.visibility) + '<span class="text-[11px] opacity-75 shrink-0">タップで切替</span>';
+    state.events = [j.event, ...state.events.filter(x => x.id !== j.event.id)];
+    renderMarkers();
+    toast(ev.visibility === 'limited' ? '限定公開にしました' : 'みんなに公開しました');
+  } catch (err) {
+    if (!handleAuthError(err)) toast(err.message, 4000);
+  } finally { btn.disabled = false; }
+}
+
+/* ---------- 公開相手（家族・友人） ---------- */
+async function loadShares() {
+  try {
+    const j = await apiPost({ action: 'getShares', token: state.auth.token });
+    renderShares(j);
+  } catch (err) {
+    if (handleAuthError(err)) return;
+    $('#shareList').innerHTML = `<p class="text-sm text-flare font-bold">${esc(err.message)}</p>`;
+  }
+}
+function renderShares(j) {
+  state.shares = j;
+  const list = j.list || [];
+  const on = list.filter(x => x.enabled).length;
+  $('#shareList').innerHTML = list.length ? `
+    <div class="flex items-center gap-2 mt-2 mb-2">
+      <p class="text-sm font-bold flex-1">公開中 <span class="text-mint">${on}</span>人 ／ 全${list.length}人</p>
+      <button class="share-all sticker bg-white rounded-lg px-2.5 py-1 text-xs font-bold" data-on="1">すべて公開</button>
+      <button class="share-all sticker bg-white rounded-lg px-2.5 py-1 text-xs font-bold" data-on="0">すべて非公開</button>
+    </div>
+    <ul class="space-y-1.5">${list.map(x => `
+      <li class="flex items-center gap-2 border-2 border-ink rounded-xl px-3 py-2 ${x.enabled ? 'bg-white' : 'bg-sky'}">
+        <span class="flex-1 min-w-0">
+          <span class="block font-bold truncate">${esc(x.nickname)}さん</span>
+          <span class="block text-[11px] font-bold ${x.enabled ? 'text-mint' : 'text-ink/50'}">${x.enabled ? '公開中（限定公開が見られます）' : '非公開'}</span>
+        </span>
+        <button class="sw share-sw" role="switch" aria-checked="${x.enabled}" data-id="${esc(x.id)}" aria-label="${esc(x.nickname)}さんへの公開"></button>
+        <button class="share-del w-9 h-9 text-flare shrink-0" data-id="${esc(x.id)}" aria-label="${esc(x.nickname)}さんをリストから外す"><i class="fa-solid fa-trash-can"></i></button>
+      </li>`).join('')}</ul>`
+    : '<p class="text-sm text-ink/60 mt-2">まだ公開相手はいません。家族や友人に会員登録してもらい、ニックネームかメールアドレスで追加してください。</p>';
+  const sw = j.sharedWithMe || [];
+  $('#sharedWithMe').innerHTML = sw.length
+    ? `<p class="text-sm"><i class="fa-solid fa-eye mr-1 text-mint"></i><b>あなたに公開してくれている人：</b>${sw.map(x => esc(x.nickname) + 'さん').join('、')}</p>`
+    : '';
+  $$('#shareList .share-sw').forEach(b => b.addEventListener('click', () => toggleShare(b)));
+  $$('#shareList .share-del').forEach(b => b.addEventListener('click', () => {
+    const x = list.find(y => y.id === b.dataset.id); if (!x) return;
+    if (!confirm(`${x.nickname}さんを公開相手から外しますか？`)) return;
+    shareCall({ action: 'deleteShare', id: x.id }, b, `${x.nickname}さんを外しました`);
+  }));
+  $$('#shareList .share-all').forEach(b => b.addEventListener('click', () => {
+    const v = b.dataset.on === '1';
+    if (!confirm(v ? 'リストの全員に限定公開を見せますか？' : 'リストの全員を非公開にしますか？')) return;
+    shareCall({ action: 'setAllShares', enabled: v }, b, v ? '全員を公開にしました' : '全員を非公開にしました');
+  }));
+}
+async function shareCall(body, btn, okMsg) {
+  if (btn) btn.disabled = true;
+  $('#shareErr').textContent = '';
+  try {
+    const j = await apiPost({ token: state.auth.token, ...body });
+    renderShares(j);
+    if (okMsg) toast(okMsg);
+    loadEvents(true);
+    return j;
+  } catch (err) {
+    if (!handleAuthError(err)) $('#shareErr').textContent = err.message;
+    return null;
+  } finally { if (btn) btn.disabled = false; }
+}
+async function toggleShare(b) {
+  const next = b.getAttribute('aria-checked') !== 'true';
+  b.setAttribute('aria-checked', next);
+  const j = await shareCall({ action: 'setShare', id: b.dataset.id, enabled: next }, b);
+  if (!j) b.setAttribute('aria-checked', !next);
+}
+$('#shareAdd').addEventListener('click', () => withButton($('#shareAdd'), async () => {
+  const q = $('#shareQuery').value.trim();
+  if (!q) { $('#shareErr').textContent = '相手のニックネームかメールアドレスを入力してください'; return; }
+  const j = await shareCall({ action: 'addShare', query: q }, null);
+  if (j) { $('#shareQuery').value = ''; toast(`${j.added}さんを追加しました（いまは非公開です）`, 3200); }
+}));
+$('#shareQuery').addEventListener('keydown', e => { if (e.key === 'Enter') $('#shareAdd').click(); });
+$('#shareInvite').addEventListener('click', () => {
+  const nick = state.auth?.user?.nickname || '';
+  const text = `今CoCo（いまココ）で、家族や友人だけに「今ここで遊んでるよ」を見せられます。\n無料で会員登録したら、ニックネームを教えてね。\n${nick ? '私のニックネーム：' + nick : ''}`;
+  shareToLine(text, appUrl());
+});
+
+/* ---------- 音声入力（間があいても聞き取りを続ける） ---------- */
+const Mic = { rec: null, target: null, btn: null, keep: false, base: '', finals: '', lastHeard: 0 };
+const MIC_SILENCE_LIMIT = 3 * 60000;  // 3分間なにも聞こえなければ自動で止める
+function SR() { return window.SpeechRecognition || window.webkitSpeechRecognition; }
+function micUi() {
+  $$('.mic-btn').forEach(b => {
+    const on = !!Mic.btn && b.dataset.mic === Mic.btn.dataset.mic && Mic.keep;
+    b.classList.toggle('rec', on);
+    b.innerHTML = on ? '<i class="fa-solid fa-stop"></i>' : '<i class="fa-solid fa-microphone"></i>';
+    b.setAttribute('aria-pressed', on);
+  });
+}
+function micWrite(interim) {
+  const el = Mic.target; if (!el) return;
+  if (!document.body.contains(el)) { micStop(); return; }
+  const max = el.maxLength > 0 ? el.maxLength : 2000;
+  el.value = (Mic.base + Mic.finals + (interim || '')).slice(0, max);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function micStop() {
+  Mic.keep = false;
+  const r = Mic.rec; Mic.rec = null;
+  if (r) { try { r.onend = null; r.stop(); } catch (_) {} }
+  if (Mic.target && Mic.finals) { Mic.base += Mic.finals; Mic.finals = ''; micWrite(''); }
+  Mic.target = null; Mic.btn = null;
+  micUi();
+}
+function micRun() {
+  const Rec = SR(); if (!Rec || !Mic.keep) return;
+  const r = new Rec();
+  Mic.rec = r;
+  r.lang = 'ja-JP'; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+  r.onresult = e => {
+    let fin = '', interim = '';
+    for (let i = 0; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) fin += t; else interim += t;
+    }
+    Mic.finals = fin;
+    Mic.lastHeard = Date.now();
+    micWrite(interim);
+  };
+  r.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { toast('マイクの使用が許可されていません。ブラウザの設定を確認してください', 4000); Mic.keep = false; }
+    else if (e.error === 'audio-capture') { toast('マイクが見つかりません'); Mic.keep = false; }
+    // no-speech / network / aborted は onend で自動的に聞き直す
+  };
+  r.onend = () => {
+    if (Mic.rec !== r) return;
+    Mic.base += Mic.finals; Mic.finals = ''; micWrite('');
+    if (Mic.keep && Mic.target && Date.now() - Mic.lastHeard < MIC_SILENCE_LIMIT) {
+      setTimeout(() => { if (Mic.keep && Mic.rec === r) { try { micRun(); } catch (_) { micStop(); } } }, 200);
+    } else {
+      if (Mic.keep) toast('しばらく声が聞こえなかったので音声入力を止めました');
+      micStop();
+    }
+  };
+  try { r.start(); } catch (_) { /* 連続start対策 */ }
+}
+function micToggle(btn) {
+  if (!SR()) { toast('この端末・ブラウザは音声入力に対応していません（Chrome や Safari をお使いください）', 4000); return; }
+  const same = Mic.btn && Mic.btn.dataset.mic === btn.dataset.mic && Mic.keep;
+  micStop();
+  if (same) return;
+  const el = document.getElementById(btn.dataset.mic); if (!el) return;
+  stopSpeak();
+  Mic.target = el; Mic.btn = btn; Mic.keep = true;
+  Mic.base = el.value; Mic.finals = ''; Mic.lastHeard = Date.now();
+  micUi();
+  micRun();
+  toast('話してください。終わったら■で止めます', 2200);
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('.mic-btn'); if (!b) return;
+  e.preventDefault();
+  micToggle(b);
+});
+
+/* ---------- 読み上げ（本文だけを読む。指示文は付けない） ---------- */
+const Speech = { audio: null, url: '', btn: null, playing: false, uttering: false };
+function narrationClean(text) {
+  let t = String(text || '').replace(/[#＃]\S+/g, '').replace(/https?:\/\/\S+/g, '');
+  const patterns = [
+    /^[\s「『"]*(以下|次|下記)の(文章|文|テキスト|内容)を[^。\n]{0,30}?(読み上げ|朗読|ナレーション)[^。\n:：]{0,15}[。:：\n]\s*/,
+    /^[\s「『"]*[^。\n]{0,30}?(で|に|の声で|な声で|口調で|トーンで)[、\s]*(読み上げ|朗読|ナレーション)(て|して)?(ください|下さい)[。:：！!\n]?\s*/,
+    /^[\s「『"]*(読み上げ|朗読|ナレーション)(て|して)?(ください|下さい)[。:：！!\n]\s*/,
+    /^\s*(Say|Read|Speak)[^:：\n]{0,40}[:：]\s*/i,
+  ];
+  for (let i = 0; i < 3; i++) { const b = t; patterns.forEach(re => { t = t.replace(re, ''); }); if (t === b) break; }
+  return t.replace(/\s+/g, ' ').trim();
+}
+function eventNarration(ev) {
+  const parts = [
+    ev.title,
+    ev.summary,
+    `日時は、${fmtRange(evStart(ev), evEnd(ev)).replace(/〜/g, ' から ')}`,
+    `場所は、${placeText(ev)}`,
+    `募集は${ev.capacity}、参加費は${ev.fee}`,
+    ev.conditions ? `条件は、${ev.conditions}` : '',
+    ev.description,
+  ].filter(Boolean).map(x => String(x).replace(/[。！!？?]+$/, ''));
+  return parts.join('。') + '。';
+}
+function setSpeakBtn(btn, mode) {
+  if (!btn || !document.body.contains(btn)) return;
+  btn.innerHTML = mode === 'loading' ? '<i class="fa-solid fa-spinner fa-spin mr-1"></i>準備中'
+    : mode === 'playing' ? '<i class="fa-solid fa-stop mr-1"></i>止める'
+    : '<i class="fa-solid fa-volume-high mr-1"></i>読み上げ';
+}
+function stopSpeak() {
+  Speech.playing = false;
+  if (Speech.audio) { try { Speech.audio.pause(); } catch (_) {} Speech.audio = null; }
+  if (Speech.url) { URL.revokeObjectURL(Speech.url); Speech.url = ''; }
+  if (Speech.uttering && 'speechSynthesis' in window) { speechSynthesis.cancel(); Speech.uttering = false; }
+  setSpeakBtn(Speech.btn, 'idle'); Speech.btn = null;
+}
+function pcmToWavBlob(b64, mime) {
+  const bin = atob(b64), n = bin.length, pcm = new Uint8Array(n);
+  for (let i = 0; i < n; i++) pcm[i] = bin.charCodeAt(i);
+  const rate = Number((/rate=(\d+)/.exec(mime || '') || [])[1]) || 24000;
+  const buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+  const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, n, true);
+  new Uint8Array(buf, 44).set(pcm);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+function speakBrowser(text, btn) {
+  if (!('speechSynthesis' in window)) { toast('この端末では読み上げできません'); stopSpeak(); return; }
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ja-JP'; u.rate = 1.05;
+  const ja = speechSynthesis.getVoices().find(v => /^ja/i.test(v.lang)); if (ja) u.voice = ja;
+  u.onend = () => { if (Speech.uttering) stopSpeak(); };
+  u.onerror = () => { if (Speech.uttering) stopSpeak(); };
+  speechSynthesis.cancel();
+  Speech.uttering = true;
+  speechSynthesis.speak(u);
+  setSpeakBtn(btn, 'playing');
+}
+async function speakText(raw, btn) {
+  if (Speech.playing) { const same = Speech.btn === btn; stopSpeak(); if (same) return; }
+  const text = narrationClean(raw).slice(0, 600);
+  if (!text) return;
+  micStop();
+  Speech.playing = true; Speech.btn = btn;
+  const audio = new Audio();               // タップ直後に作って再生許可を得る（iPhone対策）
+  try { audio.play().catch(() => {}); } catch (_) {}
+  Speech.audio = audio;
+  if (isMember()) {
+    setSpeakBtn(btn, 'loading');
+    try {
+      const j = await apiPost({ action: 'tts', token: state.auth.token, text });
+      if (!Speech.playing || Speech.audio !== audio) return;
+      const blob = /^audio\/(wav|x-wav|mpeg|mp3|ogg|webm)/i.test(j.mimeType)
+        ? new Blob([Uint8Array.from(atob(j.data), c => c.charCodeAt(0))], { type: j.mimeType })
+        : pcmToWavBlob(j.data, j.mimeType);
+      Speech.url = URL.createObjectURL(blob);
+      audio.src = Speech.url;
+      audio.onended = () => { if (Speech.audio === audio) stopSpeak(); };
+      await audio.play();
+      setSpeakBtn(btn, 'playing');
+      return;
+    } catch (_) {
+      if (!Speech.playing || Speech.audio !== audio) return;
+      Speech.audio = null;   // AI音声が使えないときは端末の音声で
+    }
+  }
+  speakBrowser(text, btn);
+}
+
+/* ---------- 使い方・バージョン ---------- */
+function setServerVersion(v) {
+  state.serverVersion = v;
+  const el = $('#verServer'); if (el) el.textContent = v;
+}
+$('#btnHelp').addEventListener('click', async () => {
+  openSheet('sheetHelp');
+  $('#sheetHelp .sheet-body').scrollTop = 0;
+  if (!state.serverVersion) {
+    try { const j = await apiGet({ action: 'ping' }); setServerVersion(j.version || '不明（GASを更新してください）'); }
+    catch (_) { setServerVersion('接続できません'); }
+  }
 });
 
 /* ---------- 投稿フロー（新規・修正） ---------- */
@@ -1309,6 +1791,7 @@ function newDraft(latlng) {
     editId: null, latlng: latlng || null, category: null, media: null,
     existingMedia: null, removeMedia: false, origExpires: null,
     exp: 'end', capacity: 'あと2人', fee: '割り勘', ages: ['誰でも'], gender: '', join: 'app',
+    vis: 'public',
   };
 }
 function toLocalInput(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
@@ -1381,6 +1864,7 @@ function openEdit(ev) {
     fee: FEE_VALUES.includes(ev.fee) ? ev.fee : '',
     ages: cond.ages, gender: cond.gender,
     join: ev.join_method === 'direct' ? 'direct' : 'app',
+    vis: ev.visibility === 'limited' ? 'limited' : 'public',
   };
   resetPostForm();
   $('#pTitle').value = ev.title; $('#pTitleCount').textContent = ev.title.length;
@@ -1456,6 +1940,10 @@ function syncChips() {
   $$('#ageChips .chip').forEach(c => c.setAttribute('aria-pressed', d.ages.includes(c.dataset.v)));
   $$('#genderChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.v === d.gender));
   $$('#joinChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.join === d.join));
+  $$('#visChips .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.vis === d.vis));
+  $('#visHint').textContent = d.vis === 'limited'
+    ? '自分と、マイページの「公開相手（家族・友人）」でONにした会員だけが見られます。相手の追加やON／OFFはマイページから。'
+    : '地図を見た人なら誰でも（ログインしていなくても）見られます。';
   $('#joinHint').textContent = d.join === 'direct'
     ? '詳細に「参加表明は主催者に直接申し込んでください」と表示し、アプリの参加表明ボタンは出しません。アプリからの参加表明の登録はできなくなります。下の連絡先SNSを1つ以上入れてください。'
     : '会員がアプリから参加表明できます。参加者リストは主催者と参加者だけに表示されます。';
@@ -1505,6 +1993,7 @@ $('#ageChips').addEventListener('click', e => {
   syncChips();
 });
 $('#genderChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.draft.gender = b.dataset.v; syncChips(); });
+$('#visChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.draft.vis = b.dataset.vis; syncChips(); });
 $('#joinChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; state.draft.join = b.dataset.join; syncChips(); updateNav(); });
 ['#snsX', '#snsIg', '#snsLine', '#snsFb', '#snsOther'].forEach(sel => $(sel).addEventListener('input', () => { if (state.draft) { syncChips(); updateNav(); } }));
 function snsError() {
@@ -1700,10 +2189,11 @@ $('#fileCamera').addEventListener('change', onFile);
 $('#fileLibrary').addEventListener('change', onFile);
 
 /* ステップ */
-const STEP_LABELS = { 1: '1／4　場所と種別', 2: '2／4　内容と写真', 3: '3／4　開催日時と表示期限', 4: '4／4　募集と連絡先' };
+const STEP_LABELS = { 1: '1／4　場所と種別', 2: '2／4　内容と写真', 3: '3／4　開催日時と表示期限', 4: '4／4　公開範囲・募集・連絡先' };
 const LAST_STEP = 4;
 function goStep(n) {
   state.step = n;
+  micStop();
   $$('#sheetPost .step').forEach(s => s.classList.toggle('hidden', Number(s.dataset.step) !== n));
   $$('#sheetPost .step-bar').forEach((b, i) => { b.style.background = i < n ? 'var(--flare)' : '#fff'; });
   $('#stepLabel').textContent = STEP_LABELS[n];
@@ -1749,6 +2239,7 @@ async function submitPost() {
     conditions: conds,
     sns,
     join_method: d.join,
+    visibility: d.vis,
     media: d.media ? { data: d.media.data, mimeType: d.media.mimeType } : null,
   };
   const msgs = [editing ? 'Geminiが修正内容をチェック中...' : 'Geminiが投稿をチェック中...', 'キャッチコピーを考えています...'];
@@ -1764,7 +2255,10 @@ async function submitPost() {
     state.filter = 'all'; renderFilters(); renderMarkers();
     state.map.flyTo([j.event.lat, j.event.lng], 16, { duration: .8 });
     if (editing) toast('修正を保存しました');
-    else { burst(innerWidth / 2, innerHeight / 2); toast('投稿しました！地図に載りました'); }
+    else {
+      burst(innerWidth / 2, innerHeight / 2);
+      toast(j.event.visibility === 'limited' ? '限定公開で投稿しました。LINEで送って知らせよう！' : '投稿しました！地図に載りました', 3200);
+    }
     setTimeout(() => openDetail(j.event.id), 900);
   } catch (err) {
     hideLoading();
@@ -1791,6 +2285,8 @@ $('#btnRefresh').addEventListener('click', async () => {
 
 /* ---------- 起動 ---------- */
 (async function boot() {
+  $('#verBadge').textContent = APP_VERSION;
+  $$('.ver-app').forEach(e => e.textContent = APP_VERSION);
   initMap();
   renderFilters();
   renderUser();
@@ -1811,7 +2307,16 @@ $('#btnRefresh').addEventListener('click', async () => {
   if (eid) {
     const ev = state.events.find(x => x.id === eid);
     if (ev) { state.map.setView([ev.lat, ev.lng], 16); openDetail(eid); }
-    else { toast('このイベントは掲載が終了しています'); history.replaceState(null, '', location.pathname); }
+    else if (!isMember()) {
+      history.replaceState(null, '', location.pathname);
+      requireAuth('このリンクは限定公開のイベントかもしれません。ログインすると見られる場合があります。', async () => {
+        await loadEvents(true);
+        const e2 = state.events.find(x => x.id === eid);
+        if (e2) { state.map.setView([e2.lat, e2.lng], 16); openDetail(eid); }
+        else toast('このイベントは見られないか、掲載が終了しています', 4000);
+      });
+    }
+    else { toast('このイベントは見られないか、掲載が終了しています', 4000); history.replaceState(null, '', location.pathname); }
   }
   setInterval(() => { if (!document.hidden) loadEvents(true); }, 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadEvents(true); });

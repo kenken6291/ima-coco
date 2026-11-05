@@ -5,6 +5,8 @@
  * スクリプトプロパティ:
  *   GEMINI_API_KEY        (必須) Google AI Studio の API キー
  *   GEMINI_MODEL          (任意) 既定: gemini-3.8-flash
+ *   GEMINI_TTS_MODEL      (任意) 既定: gemini-2.5-flash-preview-tts（読み上げ用）
+ *   GEMINI_TTS_VOICE      (任意) 既定: Kore
  *   APP_URL               (任意) 既定: https://kenken6291.github.io/ima-coco/  （メール本文のリンク）
  *   SPREADSHEET_ID        (setup() が自動設定)
  *   DRIVE_FOLDER_ID       (setup() が自動設定)
@@ -15,11 +17,22 @@
  * 初回・列追加時: setup() を実行 → ウェブアプリとしてデプロイ（新しいバージョン）
  */
 
+const APP_VERSION = 'v2.0.0';      // index.html の APP_VERSION とそろえる
+const AGREE_VERSION = '2026-11';    // 同意文の版（文言を変えたら更新）
+const AGREE_ITEMS = ['notice', 'disclaimer', 'self', 'parties'];
+
 const CONFIG = {
   SHEET_EVENTS: 'events',
+  SHEET_SHARES: 'shares',
   SHEET_USERS: 'users',
   SHEET_PARTICIPANTS: 'participants',
   GEMINI_MODEL_DEFAULT: 'gemini-3.8-flash',
+  GEMINI_TTS_MODEL_DEFAULT: 'gemini-2.5-flash-preview-tts',
+  GEMINI_TTS_VOICE_DEFAULT: 'Kore',
+  TTS_MAX_CHARS: 600,
+  TTS_LIMIT_PER_10MIN: 30,
+  MAX_SHARES: 50,               // 公開相手の最大人数
+  SHARE_ADD_LIMIT_PER_10MIN: 20,
   APP_URL_DEFAULT: 'https://kenken6291.github.io/ima-coco/',
   MAX_ACTIVE_POSTS_PER_USER: 20, // 1人が同時に公開できる件数
   MAX_MEDIA_BYTES: 20 * 1024 * 1024,
@@ -39,12 +52,16 @@ const EVENT_HEADERS = [
   'id', 'created_at', 'expires_at', 'title', 'category', 'icon', 'summary', 'description',
   'lat', 'lng', 'media_url', 'media_type', 'capacity', 'fee', 'conditions', 'user_id', 'status',
   'hashtags', 'media_file_id',
-  'start_at', 'end_at', 'address', 'pref', 'area', 'sns', 'join_method'
+  'start_at', 'end_at', 'address', 'pref', 'area', 'sns', 'join_method',
+  'visibility'
 ];
 const USER_HEADERS = [
   'user_id', 'nickname', 'email', 'pass_hash', 'salt', 'must_change',
-  'token', 'token_expires', 'created_at', 'last_login', 'temp_issued_at'
+  'token', 'token_expires', 'created_at', 'last_login', 'temp_issued_at',
+  'agreed_at', 'agree_version'
 ];
+/** 公開相手（owner_id が target_id に「限定公開」を見せるか） enabled は既定 FALSE（非公開） */
+const SHARE_HEADERS = ['id', 'owner_id', 'target_id', 'enabled', 'created_at', 'updated_at'];
 const PARTICIPANT_HEADERS = [
   'id', 'event_id', 'user_id', 'nickname', 'people', 'message', 'added_by', 'created_at', 'updated_at'
 ];
@@ -105,6 +122,7 @@ function setup() {
   ensureSheet_(ss, CONFIG.SHEET_EVENTS, EVENT_HEADERS);
   ensureSheet_(ss, CONFIG.SHEET_USERS, USER_HEADERS);
   ensureSheet_(ss, CONFIG.SHEET_PARTICIPANTS, PARTICIPANT_HEADERS);
+  ensureSheet_(ss, CONFIG.SHEET_SHARES, SHARE_HEADERS);
 
   if (!props.getProperty('DRIVE_FOLDER_ID')) {
     const folder = DriveApp.createFolder('今CoCo_media');
@@ -114,7 +132,7 @@ function setup() {
     props.setProperty('PEPPER', Utilities.getUuid() + Utilities.getUuid());
   }
   setupTriggers();
-  Logger.log('セットアップ完了');
+  Logger.log('セットアップ完了（' + APP_VERSION + '）');
   Logger.log('SPREADSHEET_ID: ' + props.getProperty('SPREADSHEET_ID'));
   Logger.log('DRIVE_FOLDER_ID: ' + props.getProperty('DRIVE_FOLDER_ID'));
   Logger.log('GEMINI_API_KEY: ' + (props.getProperty('GEMINI_API_KEY') ? '設定済み' : '未設定（スクリプトプロパティに追加してください）'));
@@ -152,6 +170,12 @@ function testGemini() {
   Logger.log(JSON.stringify(r, null, 2));
 }
 
+/** 読み上げ（TTS）の動作確認用（エディタから実行） */
+function testTts() {
+  const r = geminiTts_('今CoCoへようこそ。今、ここで遊んでるよ！を地図でシェアしましょう。');
+  Logger.log('mime: ' + r.mimeType + ' / bytes(base64): ' + r.data.length);
+}
+
 /** メール送信の動作確認用（エディタから実行。自分宛てに届きます） */
 function testMail() {
   const me = Session.getActiveUser().getEmail();
@@ -168,13 +192,13 @@ function doGet(e) {
     const action = p.action || 'getEvents';
     switch (action) {
       case 'getEvents':
-        return json_({ ok: true, events: getEvents_(), serverTime: new Date().toISOString() });
+        return json_({ ok: true, events: getEvents_(), serverTime: new Date().toISOString(), version: APP_VERSION });
       case 'geocode':
         return json_({ ok: true, results: geocode_(p.q) });
       case 'resolveMapUrl':
         return json_(Object.assign({ ok: true }, resolveMapUrl_(p.url)));
       case 'ping':
-        return json_({ ok: true, app: '今CoCo', time: new Date().toISOString() });
+        return json_({ ok: true, app: '今CoCo', version: APP_VERSION, time: new Date().toISOString() });
       default:
         return json_({ ok: false, error: '不明なactionです: ' + action });
     }
@@ -199,6 +223,16 @@ function doPost(e) {
       case 'createEvent': return json_(createEvent_(body));
       case 'updateEvent': return json_(updateEvent_(body));
       case 'deleteEvent': return json_(deleteEvent_(body));
+      case 'setEventVisibility': return json_(setEventVisibility_(body));
+      case 'getLimitedEvents': return json_(getLimitedEvents_(body));
+      // 公開相手（家族・友人）
+      case 'getShares': return json_(getShares_(body));
+      case 'addShare': return json_(addShare_(body));
+      case 'setShare': return json_(setShare_(body));
+      case 'setAllShares': return json_(setAllShares_(body));
+      case 'deleteShare': return json_(deleteShare_(body));
+      // 読み上げ
+      case 'tts': return json_(tts_(body));
       // 参加表明
       case 'getParticipants': return json_(getParticipants_(body));
       case 'saveParticipant': return json_(saveParticipant_(body));
@@ -280,7 +314,7 @@ function withLock_(fn) {
   try { return fn(); } finally { lock.releaseLock(); }
 }
 function clearEventsCache_() {
-  CacheService.getScriptCache().remove('events_v1');
+  CacheService.getScriptCache().remove('events_v2');
 }
 function appUrl_() {
   return PropertiesService.getScriptProperties().getProperty('APP_URL') || CONFIG.APP_URL_DEFAULT;
@@ -365,7 +399,11 @@ function register_(b) {
   const email = normEmail_(b.email);
   validateNickname_(nickname);
   validateEmail_(email);
-  if (b.agree !== true) throw apiError_('利用上の注意への同意が必要です');
+  if (b.agree !== true) throw apiError_('利用上の注意・免責事項への同意が必要です');
+  const ag = Array.isArray(b.agreements) ? b.agreements.map(String) : [];
+  if (!AGREE_ITEMS.every(k => ag.indexOf(k) >= 0)) {
+    throw apiError_('「利用上の注意」「免責事項」「自己責任」「当事者間での解決」のすべてにチェックしてください');
+  }
   if (MailApp.getRemainingDailyQuota() < 1) throw apiError_('本日のメール送信数が上限に達しました。明日もう一度お試しください');
 
   const temp = tempPassword_();
@@ -384,6 +422,7 @@ function register_(b) {
       user_id: Utilities.getUuid(), nickname: nickname, email: email,
       pass_hash: hash_(temp, salt), salt: salt, must_change: 'TRUE',
       token: '', token_expires: '', created_at: now, last_login: '', temp_issued_at: now,
+      agreed_at: now, agree_version: AGREE_VERSION,
     };
     appendObj_(sh, user);
     return user;
@@ -572,17 +611,17 @@ function userMap_() {
  * ========================================================= */
 function getEvents_() {
   const cache = CacheService.getScriptCache();
-  const cached = cache.get('events_v1');
+  const cached = cache.get('events_v2');
   if (cached) return JSON.parse(cached);
 
   const now = Date.now();
   const users = userMap_();
   const stats = participantStats_();
   const list = readAll_(sheet_(CONFIG.SHEET_EVENTS))
-    .filter(r => r.id && String(r.status) === 'active' && ms_(r.expires_at) > now)
+    .filter(r => r.id && String(r.status) === 'active' && ms_(r.expires_at) > now && visOf_(r) === 'public')
     .map(r => publicEvent_(r, users, stats));
 
-  try { cache.put('events_v1', JSON.stringify(list), CONFIG.EVENTS_CACHE_SEC); } catch (_) { /* 100KB超はキャッシュしない */ }
+  try { cache.put('events_v2', JSON.stringify(list), CONFIG.EVENTS_CACHE_SEC); } catch (_) { /* 100KB超はキャッシュしない */ }
   return list;
 }
 
@@ -597,6 +636,8 @@ function participantStats_(rows) {
   });
   return stats;
 }
+
+function visOf_(r) { return String(r.visibility || '') === 'limited' ? 'limited' : 'public'; }
 
 function parseJson_(v, fallback) {
   try { return v ? JSON.parse(String(v)) : fallback; } catch (_) { return fallback; }
@@ -628,6 +669,7 @@ function publicEvent_(r, users, stats) {
     conditions: String(r.conditions || ''),
     sns: parseJson_(r.sns, []),
     join_method: String(r.join_method || '') === 'direct' ? 'direct' : 'app',
+    visibility: visOf_(r),
     user_id: uid,
     nickname: (users && users[uid] && users[uid].nickname) || '名無しさん',
     status: String(r.status),
@@ -826,6 +868,7 @@ function parseEventInput_(b) {
     expMs: Date.parse(String(b.expires_at || '')),
     sns: normalizeSns_(b.sns),
     joinMethod: b.join_method === 'direct' ? 'direct' : 'app',
+    visibility: b.visibility === 'limited' ? 'limited' : 'public',
   };
   if (!p.title) throw apiError_('タイトルを入力してください');
   if (!isFinite(p.lat) || !isFinite(p.lng) || Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180) throw apiError_('場所が正しくありません');
@@ -872,6 +915,7 @@ function eventFields_(p, ai, geo) {
     area: geo.area,
     sns: JSON.stringify(p.sns || []),
     join_method: p.joinMethod,
+    visibility: p.visibility,
   };
 }
 
@@ -1053,6 +1097,7 @@ function findEvent_(eventId) {
 function getParticipants_(b) {
   const user = authUser_(b.token);
   const ev = findEvent_(b.event_id);
+  if (!canView_(user, ev)) throw apiError_('このイベントは限定公開です');
   return participantsView_(user, ev, readAll_(sheet_(CONFIG.SHEET_PARTICIPANTS)));
 }
 
@@ -1071,6 +1116,7 @@ function saveParticipant_(b) {
     const ev = findEvent_(eventId);
     if (String(ev.status) !== 'active' || ms_(ev.expires_at) <= Date.now()) throw apiError_('このイベントは掲載が終了しています');
     const isOwner = String(ev.user_id) === user.user_id;
+    if (!isOwner && !canView_(user, ev)) throw apiError_('このイベントは限定公開です');
     const sh = sheet_(CONFIG.SHEET_PARTICIPANTS);
     const rows = readAll_(sh);
     const now = new Date().toISOString();
@@ -1130,6 +1176,226 @@ function deleteParticipant_(b) {
     clearEventsCache_();
     return participantsView_(user, ev, readAll_(sh));
   });
+}
+
+/* =========================================================
+ * 公開範囲（みんなに公開／限定公開）
+ *   限定公開のイベントは、主催者と「公開相手リストで ON にした会員」だけが見られる
+ * ========================================================= */
+/** owner が viewer に公開をONにしているか */
+function shareEnabled_(ownerId, viewerId, shareRows) {
+  const rows = shareRows || readAll_(sheet_(CONFIG.SHEET_SHARES));
+  return rows.some(s => String(s.owner_id) === String(ownerId) && String(s.target_id) === String(viewerId) && bool_(s.enabled));
+}
+function canView_(user, ev, shareRows) {
+  if (visOf_(ev) === 'public') return true;
+  if (!user) return false;
+  if (String(ev.user_id) === user.user_id) return true;
+  return shareEnabled_(ev.user_id, user.user_id, shareRows);
+}
+
+/** ログイン中の会員が見られる限定公開イベント（自分の分＋ONにしてくれた人の分） */
+function getLimitedEvents_(b) {
+  const user = authUser_(b.token);
+  const now = Date.now();
+  const shares = readAll_(sheet_(CONFIG.SHEET_SHARES));
+  const owners = {};
+  owners[user.user_id] = true;
+  shares.forEach(s => { if (String(s.target_id) === user.user_id && bool_(s.enabled)) owners[String(s.owner_id)] = true; });
+  const rows = readAll_(sheet_(CONFIG.SHEET_EVENTS))
+    .filter(r => r.id && String(r.status) === 'active' && ms_(r.expires_at) > now && visOf_(r) === 'limited' && owners[String(r.user_id)]);
+  if (!rows.length) return { ok: true, events: [] };
+  const users = userMap_();
+  const stats = participantStats_();
+  return { ok: true, events: rows.map(r => publicEvent_(r, users, stats)) };
+}
+
+/** 自分のイベントの公開範囲だけを切り替える（AIチェックなし） */
+function setEventVisibility_(b) {
+  const user = authUser_(b.token);
+  const id = String(b.id || '');
+  const vis = b.visibility === 'limited' ? 'limited' : 'public';
+  const saved = withLock_(() => {
+    const sh = sheet_(CONFIG.SHEET_EVENTS);
+    const ev = readAll_(sh).find(r => String(r.id) === id);
+    if (!ev) throw apiError_('投稿が見つかりません');
+    if (String(ev.user_id) !== user.user_id) throw apiError_('自分の投稿だけ変更できます');
+    if (String(ev.status) !== 'active' || ms_(ev.expires_at) <= Date.now()) throw apiError_('終了した投稿は変更できません');
+    setFields_(sh, ev._row, { visibility: vis });
+    return Object.assign({}, ev, { visibility: vis });
+  });
+  clearEventsCache_();
+  return { ok: true, event: publicEvent_(saved, { [user.user_id]: { nickname: user.nickname } }, participantStats_()) };
+}
+
+/* =========================================================
+ * 公開相手リスト（家族・友人）
+ *   追加した直後は「非公開（OFF）」。ONにした相手だけが限定公開イベントを見られる
+ * ========================================================= */
+function sharesView_(user) {
+  const users = {};
+  readAll_(sheet_(CONFIG.SHEET_USERS)).forEach(u => { users[String(u.user_id)] = String(u.nickname); });
+  const rows = readAll_(sheet_(CONFIG.SHEET_SHARES));
+  const list = rows
+    .filter(s => String(s.owner_id) === user.user_id && users[String(s.target_id)])
+    .map(s => ({
+      id: String(s.id),
+      nickname: users[String(s.target_id)],
+      enabled: bool_(s.enabled),
+      created_at: iso_(s.created_at),
+      updated_at: iso_(s.updated_at),
+    }))
+    .sort((a, b2) => (a.nickname < b2.nickname ? -1 : 1));
+  const sharedWithMe = rows
+    .filter(s => String(s.target_id) === user.user_id && bool_(s.enabled) && users[String(s.owner_id)])
+    .map(s => ({ nickname: users[String(s.owner_id)] }))
+    .sort((a, b2) => (a.nickname < b2.nickname ? -1 : 1));
+  return { ok: true, list: list, sharedWithMe: sharedWithMe, max: CONFIG.MAX_SHARES };
+}
+
+function getShares_(b) {
+  return sharesView_(authUser_(b.token));
+}
+
+/** ニックネーム（完全一致）またはメールアドレスで会員を追加。初期状態は非公開 */
+function addShare_(b) {
+  const user = authUser_(b.token);
+  const q = clean_(b.query, 254);
+  if (!q) throw apiError_('相手のニックネームかメールアドレスを入力してください');
+
+  const cache = CacheService.getScriptCache();
+  const rk = 'shareadd_' + user.user_id;
+  const n = Number(cache.get(rk) || 0);
+  if (n >= CONFIG.SHARE_ADD_LIMIT_PER_10MIN) throw apiError_('追加の操作が続いています。10分ほど待ってからお試しください');
+  cache.put(rk, String(n + 1), 600);
+
+  return withLock_(() => {
+    const users = readAll_(sheet_(CONFIG.SHEET_USERS));
+    const isEmail = q.indexOf('@') >= 0;
+    const key = q.toLowerCase();
+    const target = users.find(u => isEmail ? String(u.email).toLowerCase() === key : String(u.nickname).toLowerCase() === key);
+    if (!target) {
+      throw apiError_(isEmail
+        ? 'そのメールアドレスの会員は見つかりませんでした。先に相手に会員登録してもらってください'
+        : 'そのニックネームの会員は見つかりませんでした（完全一致で入力してください）');
+    }
+    if (String(target.user_id) === user.user_id) throw apiError_('自分自身は追加できません');
+    const sh = sheet_(CONFIG.SHEET_SHARES);
+    const rows = readAll_(sh);
+    const mine = rows.filter(s => String(s.owner_id) === user.user_id);
+    if (mine.some(s => String(s.target_id) === String(target.user_id))) throw apiError_(String(target.nickname) + 'さんはすでにリストにいます');
+    if (mine.length >= CONFIG.MAX_SHARES) throw apiError_('公開相手は' + CONFIG.MAX_SHARES + '人までです');
+    const now = new Date().toISOString();
+    appendObj_(sh, {
+      id: Utilities.getUuid(), owner_id: user.user_id, target_id: String(target.user_id),
+      enabled: 'FALSE', created_at: now, updated_at: now,
+    });
+    const v = sharesView_(user);
+    v.added = String(target.nickname);
+    return v;
+  });
+}
+
+function setShare_(b) {
+  const user = authUser_(b.token);
+  return withLock_(() => {
+    const sh = sheet_(CONFIG.SHEET_SHARES);
+    const r = readAll_(sh).find(s => String(s.id) === String(b.id) && String(s.owner_id) === user.user_id);
+    if (!r) throw apiError_('公開相手が見つかりません');
+    setFields_(sh, r._row, { enabled: b.enabled === true ? 'TRUE' : 'FALSE', updated_at: new Date().toISOString() });
+    return sharesView_(user);
+  });
+}
+
+function setAllShares_(b) {
+  const user = authUser_(b.token);
+  const val = b.enabled === true ? 'TRUE' : 'FALSE';
+  return withLock_(() => {
+    const sh = sheet_(CONFIG.SHEET_SHARES);
+    const h = headers_(sh);
+    const cEn = h.indexOf('enabled'), cUp = h.indexOf('updated_at');
+    const now = new Date().toISOString();
+    readAll_(sh).filter(s => String(s.owner_id) === user.user_id).forEach(s => {
+      sh.getRange(s._row, cEn + 1).setValue(val);
+      if (cUp >= 0) sh.getRange(s._row, cUp + 1).setValue(now);
+    });
+    return sharesView_(user);
+  });
+}
+
+function deleteShare_(b) {
+  const user = authUser_(b.token);
+  return withLock_(() => {
+    const sh = sheet_(CONFIG.SHEET_SHARES);
+    const r = readAll_(sh).find(s => String(s.id) === String(b.id) && String(s.owner_id) === user.user_id);
+    if (!r) throw apiError_('公開相手が見つかりません');
+    sh.deleteRow(r._row);
+    return sharesView_(user);
+  });
+}
+
+/* =========================================================
+ * 読み上げ（Gemini TTS）
+ *   読み上げる本文だけを送る。「〜で読み上げてください」などの指示文は付けない
+ * ========================================================= */
+function stripNarrationPrefix_(text) {
+  let t = String(text || '');
+  const patterns = [
+    /^[\s「『"]*(以下|次|下記)の(文章|文|テキスト|内容)を[^。\n]{0,30}?(読み上げ|朗読|ナレーション)[^。\n:：]{0,15}[。:：\n]\s*/,
+    /^[\s「『"]*[^。\n]{0,30}?(で|に|の声で|な声で|口調で|トーンで)[、\s]*(読み上げ|朗読|ナレーション)(て|して)?(ください|下さい)[。:：！!\n]?\s*/,
+    /^[\s「『"]*(読み上げ|朗読|ナレーション)(て|して)?(ください|下さい)[。:：！!\n]\s*/,
+    /^\s*(Say|Read|Speak)[^:：\n]{0,40}[:：]\s*/i,
+  ];
+  for (let i = 0; i < 3; i++) {
+    const before = t;
+    patterns.forEach(re => { t = t.replace(re, ''); });
+    if (t === before) break;
+  }
+  return t.trim();
+}
+
+function tts_(b) {
+  const user = authUser_(b.token);
+  const text = stripNarrationPrefix_(clean_(b.text, CONFIG.TTS_MAX_CHARS));
+  if (!text) throw apiError_('読み上げる文章がありません');
+  const cache = CacheService.getScriptCache();
+  const rk = 'tts_' + user.user_id;
+  const n = Number(cache.get(rk) || 0);
+  if (n >= CONFIG.TTS_LIMIT_PER_10MIN) throw apiError_('読み上げが続いています。少し時間をおいてください');
+  cache.put(rk, String(n + 1), 600);
+  const r = geminiTts_(text);
+  return { ok: true, mimeType: r.mimeType, data: r.data };
+}
+
+function geminiTts_(text) {
+  const props = PropertiesService.getScriptProperties();
+  const key = props.getProperty('GEMINI_API_KEY');
+  if (!key) throw apiError_('サーバー設定エラー：GEMINI_API_KEY が未設定です');
+  const model = props.getProperty('GEMINI_TTS_MODEL') || CONFIG.GEMINI_TTS_MODEL_DEFAULT;
+  const voice = props.getProperty('GEMINI_TTS_VOICE') || CONFIG.GEMINI_TTS_VOICE_DEFAULT;
+  const payload = {
+    // 本文のみ。前置きの指示文は入れない（入れるとそのまま読まれるため）
+    contents: [{ role: 'user', parts: [{ text: text }] }],
+    generationConfig: {
+      responseModalities: ['AUDIO'],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+    },
+  };
+  const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+    method: 'post', contentType: 'application/json',
+    headers: { 'x-goog-api-key': key },
+    payload: JSON.stringify(payload), muteHttpExceptions: true,
+  });
+  const code = res.getResponseCode();
+  if (code !== 200) {
+    console.error('Gemini TTS error', code, res.getContentText());
+    throw apiError_('読み上げ音声を作れませんでした（' + code + '）');
+  }
+  const data = parseJson_(res.getContentText(), {}) || {};
+  const parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+  const audio = parts.find(p => p.inlineData && p.inlineData.data);
+  if (!audio) throw apiError_('読み上げ音声を作れませんでした');
+  return { mimeType: String(audio.inlineData.mimeType || 'audio/L16;rate=24000'), data: String(audio.inlineData.data) };
 }
 
 /* =========================================================
