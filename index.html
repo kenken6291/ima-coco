@@ -78,7 +78,10 @@
   .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1001; max-height: 90vh; background: #fff; border-top: 2.5px solid var(--ink); border-radius: 28px 28px 0 0; transform: translateY(105%); transition: transform .28s cubic-bezier(.2,.9,.3,1); display: flex; flex-direction: column; margin: 0 auto; max-width: 560px; }
   .sheet.open { transform: translateY(0); }
   .sheet-grab { width: 44px; height: 5px; border-radius: 3px; background: #d4d1e6; margin: 10px auto 4px; flex-shrink: 0; }
-  .sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1 1 auto; min-height: 0; }
+  /* シート内の見出し・チップ行が縦に押しつぶされないようにする */
+  .sheet > *:not(.sheet-body) { flex-shrink: 0; }
+  .chip { flex-shrink: 0; line-height: 1.4; }
   @media (min-width: 600px) { .sheet { border: 2.5px solid var(--ink); border-radius: 28px; bottom: 20px; } }
 
   .chip { border: 2px solid var(--ink); border-radius: 999px; padding: 6px 14px; font-weight: 700; font-size: 14px; background: #fff; white-space: nowrap; }
@@ -611,7 +614,7 @@
 /* =========================================================
  * 設定：GASのウェブアプリURL
  * ========================================================= */
-const APP_VERSION = 'v2.0.0';   // 画面のバージョン（GAS側の APP_VERSION とそろえる）
+const APP_VERSION = 'v2.0.1';   // 画面のバージョン（GAS側の APP_VERSION とそろえる）
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxxQSPk7DVxkqxCOg-7ptiq7kYNumIdaHkaRwnPsbxf7Tv8diDNPvlFXrtepWp2gKb5qw/exec';
 
 const CATS = [
