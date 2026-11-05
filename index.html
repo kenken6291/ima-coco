@@ -614,7 +614,7 @@
 /* =========================================================
  * 設定：GASのウェブアプリURL
  * ========================================================= */
-const APP_VERSION = 'v2.0.1';   // 画面のバージョン（GAS側の APP_VERSION とそろえる）
+const APP_VERSION = 'v2.0.2';   // 画面のバージョン（GAS側の APP_VERSION とそろえる）
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxxQSPk7DVxkqxCOg-7ptiq7kYNumIdaHkaRwnPsbxf7Tv8diDNPvlFXrtepWp2gKb5qw/exec';
 
 const CATS = [
@@ -2054,7 +2054,7 @@ function coordsFromMapUrl(u) {
   ];
   for (const p of pats) {
     const m = t.match(p);
-    if (m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180) return L.latLng(+m[1], +m[2]);
+    if (m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180 && !(Math.abs(+m[1] - 37.0625) < 0.01 && Math.abs(+m[2] + 95.677068) < 0.01)) return L.latLng(+m[1], +m[2]);
   }
   return null;
 }

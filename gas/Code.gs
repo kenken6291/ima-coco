@@ -17,7 +17,7 @@
  * 初回・列追加時: setup() を実行 → ウェブアプリとしてデプロイ（新しいバージョン）
  */
 
-const APP_VERSION = 'v2.0.0';      // index.html の APP_VERSION とそろえる
+const APP_VERSION = 'v2.0.2';      // index.html の APP_VERSION とそろえる
 const AGREE_VERSION = '2026-11';    // 同意文の版（文言を変えたら更新）
 const AGREE_ITEMS = ['notice', 'disclaimer', 'self', 'parties'];
 
@@ -701,7 +701,11 @@ function isGoogleUrl_(u) {
   return /^https:\/\/(maps\.app\.goo\.gl|goo\.gl|([a-z0-9-]+\.)*google\.[a-z.]+)(\/|\?|$)/i.test(String(u));
 }
 function validLatLng_(lat, lng) {
-  return isFinite(lat) && isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+  return isFinite(lat) && isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0) && !isMapDefault_(lat, lng);
+}
+/** Googleマップが「場所なし」のときに使う既定の中心（アメリカ中央）などは無効扱い */
+function isMapDefault_(lat, lng) {
+  return Math.abs(lat - 37.0625) < 0.01 && Math.abs(lng - (-95.677068)) < 0.01;
 }
 function coordsFromText_(text) {
   let t = String(text || '');
@@ -734,9 +738,10 @@ function coordsFromHtml_(html) {
 }
 function placeNameFromUrl_(u) {
   const s = String(u || '');
-  let m = s.match(/\/place\/([^/@?]+)/);
+  let m = s.match(/\/place\/([^/@?]+)/) || s.match(/\/search\/([^/@?]+)/);
+  if (m && /^-?\d+(\.\d+)?\s*(,|%2C)/i.test(m[1])) m = null;
   if (!m) {
-    m = s.match(/[?&](?:q|query)=([^&]+)/);
+    m = s.match(/[?&](?:q|query|daddr|destination)=([^&]+)/);
     if (m && /^-?\d+(\.\d+)?\s*(,|%2C)/i.test(m[1])) m = null;
   }
   if (!m) return '';
@@ -753,12 +758,13 @@ function resolveMapUrl_(raw) {
   if (!isGoogleUrl_(url)) throw apiError_('GoogleマップのURLを貼り付けてください');
 
   const cache = CacheService.getScriptCache();
-  const ck = 'mapurl_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, url));
+  const ck = 'mapurl2_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, url));
   const hit = cache.get(ck);
   if (hit) return JSON.parse(hit);
 
   let title = placeNameFromUrl_(url);
   let coords = /goo\.gl/i.test(url) ? null : coordsFromText_(url);
+  let html = '';
   for (let i = 0; i < 6 && !coords; i++) {
     const res = UrlFetchApp.fetch(url, { followRedirects: false, muteHttpExceptions: true, headers: { 'Accept-Language': 'ja' } });
     const code = res.getResponseCode();
@@ -774,17 +780,71 @@ function resolveMapUrl_(raw) {
       continue;
     }
     if (code !== 200) throw apiError_('GoogleマップのURLを開けませんでした（' + code + '）');
-    coords = coordsFromText_(url) || coordsFromHtml_(res.getContentText());
+    coords = coordsFromText_(url);
+    html = res.getContentText();
     break;
   }
-  if (!coords && title) {
-    const g = geocode_(title);
-    if (g.length) coords = { lat: g[0].lat, lng: g[0].lng };
+  // URLに座標がないときは、場所名・住所から検索する（ページ内の座標は既定値のことが多いので最後の手段）
+  if (!coords && title) coords = geocodeLoose_(title);
+  if (!coords && html) {
+    if (!title) title = placeNameFromHtml_(html);
+    if (title) coords = geocodeLoose_(title);
+    if (!coords) coords = coordsFromHtml_(html);
   }
   if (!coords) throw apiError_('このURLから場所を読み取れませんでした。住所で検索するか「地図で選ぶ」を使ってください');
   const out = { lat: coords.lat, lng: coords.lng, title: title };
   cache.put(ck, JSON.stringify(out), 21600);
   return out;
+}
+
+/** ページの <title> や og:title から場所名を取り出す */
+function placeNameFromHtml_(html) {
+  const h = String(html || '');
+  const m = h.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) || h.match(/<title>([^<]+)<\/title>/i);
+  if (!m) return '';
+  const t = m[1].replace(/&amp;/g, '&').replace(/\s*[-–|]\s*Google\s*(マップ|Maps)\s*$/i, '').trim();
+  return /^(Google\s*(マップ|Maps))$/i.test(t) ? '' : clean_(t, 100);
+}
+
+/**
+ * 住所・場所名をゆるく検索して座標を返す
+ *   〒番号を外す・番地や建物名を削るなど、だんだん短くして国土地理院→OpenStreetMapの順で探す
+ */
+function geocodeLoose_(title) {
+  const base = String(title || '').replace(/〒?\s*\d{3}[-－ー]?\d{4}/g, ' ').replace(/[+＋]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!base) return null;
+  const z = base.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[－ー−]/g, '-');
+  const cands = [];
+  const push = v => { v = String(v || '').trim(); if (v && v.length >= 2 && cands.indexOf(v) < 0) cands.push(v); };
+  push(z);
+  push(z.split(/[,、，]/).filter(x => /[都道府県市区町村]/.test(x)).join(' '));       // 「場所名, 住所」形式
+  push((z.match(/^.*?\d+(丁目|番地?|-\d+)(-?\d+)*/) || [])[0]);                    // 番地まで
+  push((z.match(/^.*?\d+丁目/) || [])[0]);                                           // 丁目まで
+  push((z.match(/^.*?[都道府県].*?[市区町村郡]/) || [])[0]);                          // 市区町村まで
+  push(z.split(' ')[0]);
+
+  for (let i = 0; i < cands.length; i++) {
+    try {
+      const g = geocode_(cands[i]);
+      if (g.length && validLatLng_(g[0].lat, g[0].lng)) return { lat: g[0].lat, lng: g[0].lng };
+    } catch (_) {}
+  }
+  for (let i = 0; i < Math.min(cands.length, 3); i++) {
+    try {
+      const res = UrlFetchApp.fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ja&q=' + encodeURIComponent(cands[i]), {
+        muteHttpExceptions: true, headers: { 'User-Agent': 'ima-coco/1.0 (kenken6291.github.io)' },
+      });
+      if (res.getResponseCode() !== 200) continue;
+      const a = parseJson_(res.getContentText(), []) || [];
+      if (a.length && validLatLng_(Number(a[0].lat), Number(a[0].lon))) return { lat: Number(a[0].lat), lng: Number(a[0].lon) };
+    } catch (_) {}
+  }
+  return null;
+}
+
+/** 動作確認用（エディタから実行） */
+function testMapUrl() {
+  Logger.log(JSON.stringify(geocodeLoose_('〒100-0006 東京都千代田区有楽町２丁目７−１ 有楽町イトシア')));
 }
 
 /** 緯度経度 → 都道府県・エリア・町名 */
